@@ -280,11 +280,21 @@ if not st.session_state.get("authentication_status"):
     </div>
     """, unsafe_allow_html=True)
 
-authenticator.login()
+authenticator.login(fields={
+    'Form name': 'כניסה',
+    'Username': 'שם משתמש',
+    'Password': 'סיסמה',
+    'Login': 'כניסה',
+})
 
 if not st.session_state.get("authentication_status"):
     if st.session_state.get("authentication_status") is False:
         st.error("שם משתמש או סיסמה שגויים")
+    st.markdown("""
+    <div style="text-align:center; color:#aaa; margin-top:40px; font-size:12px;">
+      v1.0
+    </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
 # ── Authenticated ──────────────────────────────────────────────────────────────
