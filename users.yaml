@@ -5,6 +5,11 @@ credentials:
       name: Daniel
       password: "$2b$12$eUkCB9UxwE8flCclJiC0f.uNQJZpVKEW1PlN2QdpSShqQYbAbS0Iq"
       role: admin
+    dorra:
+      email: DorRa@electra-target.co.il
+      name: Dor Racket
+      password: "$2b$12$SHy/YxUTNiu4hDzmm6hjEue5MCJIKggWGEoRt6ujVXtk/12lYFpau"
+      role: admin
     user1:
       email: user@example.com
       name: User
