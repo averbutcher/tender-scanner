@@ -272,15 +272,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Login ─────────────────────────────────────────────────────────────────────
-authenticator.login()
-
 if not st.session_state.get("authentication_status"):
     st.markdown("""
-    <div style="direction:rtl; text-align:center; margin-top:80px;">
+    <div style="direction:rtl; text-align:center; margin-top:60px; margin-bottom:20px;">
       <h1>🔍 Tender Scanner — Electra Target</h1>
       <p style="color:#666;">אנא התחבר כדי להמשיך</p>
     </div>
     """, unsafe_allow_html=True)
+
+authenticator.login()
+
+if not st.session_state.get("authentication_status"):
     if st.session_state.get("authentication_status") is False:
         st.error("שם משתמש או סיסמה שגויים")
     st.stop()
