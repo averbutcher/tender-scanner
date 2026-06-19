@@ -271,7 +271,9 @@ st.markdown("""
 
   /* Login form title right-aligned */
   [data-testid="stForm"] h2,
-  [data-testid="stForm"] > div:first-child { text-align: right !important; direction: rtl !important; }
+  [data-testid="stForm"] p,
+  [data-testid="stForm"] span,
+  [data-testid="stForm"] div { text-align: right !important; direction: rtl !important; }
 </style>
 """, unsafe_allow_html=True)
 
