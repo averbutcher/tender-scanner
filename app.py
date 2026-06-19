@@ -268,6 +268,10 @@ st.markdown("""
 
   /* Spinner text */
   .stSpinner p { text-align: right; }
+
+  /* Login form title right-aligned */
+  [data-testid="stForm"] h2,
+  [data-testid="stForm"] > div:first-child { text-align: right !important; direction: rtl !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -292,7 +296,7 @@ if not st.session_state.get("authentication_status"):
         st.error("שם משתמש או סיסמה שגויים")
     st.markdown("""
     <div style="text-align:center; color:#aaa; margin-top:40px; font-size:12px;">
-      v1.0
+      v1.1
     </div>
     """, unsafe_allow_html=True)
     st.stop()
