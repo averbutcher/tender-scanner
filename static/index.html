@@ -381,7 +381,8 @@ document.getElementById('login-form').addEventListener('submit', async e => {
     const user = await api('POST', '/api/login', fd, true);
     if (!user) return;
     S.user = user;
-    S.activeApp = user.apps[0] || 'tender_scanner';
+    const saved = localStorage.getItem('activeApp');
+    S.activeApp = (saved && user.apps.includes(saved)) ? saved : (user.apps[0] || 'tender_scanner');
     await initApp();
     showApp();
   } catch(ex) {
@@ -442,7 +443,7 @@ function renderSidebar() {
     const b = document.createElement('button');
     b.className = 'app-btn' + (S.activeApp === id ? ' active' : '') + (hasAccess ? '' : ' locked');
     b.innerHTML = `<span>${ico}</span><span style="flex:1">${label}</span>${hasAccess ? '' : '<span style="font-size:.7rem">🔒</span>'}`;
-    b.onclick = () => { S.activeApp = id; S.activeTab = id === 'tender_scanner' ? 'scan' : ''; renderSidebar(); renderMain(); };
+    b.onclick = () => { S.activeApp = id; localStorage.setItem('activeApp', id); S.activeTab = id === 'tender_scanner' ? 'scan' : ''; renderSidebar(); renderMain(); };
     appsEl.appendChild(b);
   });
   renderSbSettings();
@@ -1501,7 +1502,8 @@ function renderShiftsResult() {
     const user = await GET('/api/me');
     if (user) {
       S.user = user;
-      S.activeApp = user.apps[0] || 'tender_scanner';
+      const saved2 = localStorage.getItem('activeApp');
+      S.activeApp = (saved2 && user.apps.includes(saved2)) ? saved2 : (user.apps[0] || 'tender_scanner');
       await initApp();
       showApp();
     } else {
