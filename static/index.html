@@ -465,8 +465,6 @@ function renderSbSettings() {
     el.innerHTML = `
       <div class="sb-section">הגדרות</div>
       <div class="sb-settings">
-        <label class="sb-label">ימים אחורה (ברירת מחדל)</label>
-        <input class="sb-input" id="sb-rec-days" type="number" min="1" max="365" value="${cfg.default_days_back||7}">
         <label class="sb-label">שיחה ארוכה (דקות)</label>
         <input class="sb-input" id="sb-rec-long" type="number" min="1" value="${cfg.long_call_threshold_minutes||8}">
         <label class="sb-label">מספרים חוזרים (מינימום שיחות)</label>
@@ -1076,11 +1074,9 @@ function renderRecruiterList() {
 function addRecruiter(){ S.recruiterRecruiters.push({name:'',extension:''}); renderRecruiterList(); }
 
 async function saveRecruiterSettings(){
-  S.recruiterCfg.default_days_back=parseInt(document.getElementById('sb-rec-days').value)||7;
   S.recruiterCfg.long_call_threshold_minutes=parseInt(document.getElementById('sb-rec-long').value)||8;
   S.recruiterCfg.repeat_call_threshold=parseInt(document.getElementById('sb-rec-repeat').value)||2;
   await POST('/api/recruiter/config', S.recruiterCfg);
-  S.recruiterDaysBack=S.recruiterCfg.default_days_back;
   toast('הגדרות נשמרו!');
 }
 
