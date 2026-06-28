@@ -1177,8 +1177,9 @@ function renderRecruiterSingle(el){
   for(let h=8;h<=17;h++) hourlyItems.push({l:`${h}:00`, v:rec.hourly_distribution[String(h)]||0});
 
   const allDates=d.all_dates||[];
-  const dailyCallItems=allDates.map(dt=>({l:dt.slice(5).replace('-','/'), v:rec.daily_calls[dt]||0}));
-  const dailyMinItems=allDates.map(dt=>({l:dt.slice(5).replace('-','/'), v:rec.daily_minutes[dt]||0}));
+  const fmtDate=dt=>`${dt.slice(8)}/${dt.slice(5,7)}`;
+  const dailyCallItems=allDates.map(dt=>({l:fmtDate(dt), v:rec.daily_calls[dt]||0}));
+  const dailyMinItems=allDates.map(dt=>({l:fmtDate(dt), v:rec.daily_minutes[dt]||0}));
 
   const longThr=S.recruiterCfg?.long_call_threshold_minutes||8;
   const repThr=S.recruiterCfg?.repeat_call_threshold||2;
@@ -1209,6 +1210,10 @@ function renderRecruiterSingle(el){
   :'<div class="info" style="font-size:.82rem">אין מספרים חוזרים בתקופה זו.</div>';
 
   el.innerHTML=`
+    ${allDates.length?`<div class="info" style="margin-bottom:1rem;font-size:.83rem">
+      📅 טווח תאריכים בנתונים: <b>${fmtDate(allDates[0])}</b> עד <b>${fmtDate(allDates[allDates.length-1])}</b>
+      &nbsp;|&nbsp; ${allDates.length} ימים
+    </div>`:''}
     <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.2rem;flex-wrap:wrap">
       <label style="font-size:.85rem;font-weight:600;color:var(--muted)">בחר מגייס:</label>
       <select style="padding:.45rem .75rem;border:1px solid var(--border);border-radius:var(--radius);font-size:.88rem"
