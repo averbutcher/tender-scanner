@@ -298,7 +298,8 @@ const S = {
   recruiterCfg: null,
   recruiterTab: 'single',
   recruiterSelected: null,
-  recruiterDaysBack: 7,
+  recruiterDateFrom: null,
+  recruiterDateTo: null,
   recruiterRecruiters: [],
 };
 
@@ -410,10 +411,13 @@ async function initApp() {
   S.aliases = Object.entries(S.shiftsCfg.aliases || {});
   S.managers = S.shiftsCfg.managers || [];
   S.recruiterCfg = await GET('/api/recruiter/config');
-  S.recruiterDaysBack = S.recruiterCfg.default_days_back || 7;
   S.recruiterRecruiters = (S.recruiterCfg.recruiters || []).map(r => ({...r}));
   if ((S.user.apps || []).includes('recruiter_analysis')) {
-    S.recruiterData = await GET(`/api/recruiter/data?days_back=${S.recruiterDaysBack}`).catch(() => null);
+    S.recruiterData = await GET('/api/recruiter/data').catch(() => null);
+    if (S.recruiterData?.full_range) {
+      S.recruiterDateFrom = S.recruiterData.full_range.from;
+      S.recruiterDateTo = S.recruiterData.full_range.to;
+    }
     if (S.recruiterData?.recruiters?.length) S.recruiterSelected = S.recruiterData.recruiters[0].extension;
   }
   renderSidebar();
@@ -1095,17 +1099,34 @@ async function uploadRecruiterFile(file){
     const res=await api('POST','/api/recruiter/upload',fd,true);
     if(!res) return;
     toast(`✅ הועלו ${res.total_calls} שיחות!`);
+    S.recruiterDateFrom = null;
+    S.recruiterDateTo = null;
     await loadRecruiterData();
   }catch(e){ toast(`שגיאה: ${e.message}`,'error'); }
 }
 
 async function loadRecruiterData(){
   try{
-    S.recruiterData=await GET(`/api/recruiter/data?days_back=${S.recruiterDaysBack}`);
+    const params = new URLSearchParams();
+    if(S.recruiterDateFrom) params.set('date_from', S.recruiterDateFrom);
+    if(S.recruiterDateTo)   params.set('date_to',   S.recruiterDateTo);
+    S.recruiterData=await GET(`/api/recruiter/data?${params}`);
+    if(S.recruiterData?.full_range && !S.recruiterDateFrom){
+      S.recruiterDateFrom=S.recruiterData.full_range.from;
+      S.recruiterDateTo=S.recruiterData.full_range.to;
+    }
     if(S.recruiterData?.recruiters?.length && !S.recruiterSelected)
       S.recruiterSelected=S.recruiterData.recruiters[0].extension;
     renderRecruiterApp();
   }catch(e){ toast(`שגיאה בטעינת נתונים: ${e.message}`,'error'); }
+}
+
+function applyRecruiterDates(){
+  const f=document.getElementById('rec-date-from')?.value;
+  const t=document.getElementById('rec-date-to')?.value;
+  if(f) S.recruiterDateFrom=f;
+  if(t) S.recruiterDateTo=t;
+  loadRecruiterData();
 }
 
 function renderRecruiterApp(){
@@ -1128,17 +1149,23 @@ function renderRecruiterApp(){
       </div>
     </div>
     ${!d||!d.recruiters?.length ? '<div class="info">העלה קובץ Excel עם נתוני השיחות (גיליון "פיד") כדי להתחיל.</div>' : `
-      <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.2rem;flex-wrap:wrap">
-        <div class="tabs" style="margin-bottom:0;border-bottom:2px solid var(--border)">
-          <div class="tab${S.recruiterTab==='single'?' active':''}" onclick="S.recruiterTab='single';renderRecruiterMain()">👤 תצוגת מגייס</div>
-          <div class="tab${S.recruiterTab==='overview'?' active':''}" onclick="S.recruiterTab='overview';renderRecruiterMain()">📊 מבט על</div>
+      ${d.full_range ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:.75rem 1rem;margin-bottom:1rem;font-size:.83rem">
+        <div style="color:var(--muted);margin-bottom:.5rem">📅 טווח הנתונים שהועלו: <b>${d.full_range.from.slice(8)}/${d.full_range.from.slice(5,7)}/${d.full_range.from.slice(0,4)}</b> עד <b>${d.full_range.to.slice(8)}/${d.full_range.to.slice(5,7)}/${d.full_range.to.slice(0,4)}</b></div>
+        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+          <label style="color:var(--muted);font-size:.82rem">סנן מ:</label>
+          <input type="date" id="rec-date-from" value="${S.recruiterDateFrom||d.full_range.from}"
+            min="${d.full_range.from}" max="${d.full_range.to}"
+            style="padding:.3rem .5rem;border:1px solid var(--border);border-radius:6px;font-size:.82rem">
+          <label style="color:var(--muted);font-size:.82rem">עד:</label>
+          <input type="date" id="rec-date-to" value="${S.recruiterDateTo||d.full_range.to}"
+            min="${d.full_range.from}" max="${d.full_range.to}"
+            style="padding:.3rem .5rem;border:1px solid var(--border);border-radius:6px;font-size:.82rem">
+          <button class="btn btn-primary btn-sm" onclick="applyRecruiterDates()">החל</button>
         </div>
-        <div style="display:flex;align-items:center;gap:.5rem;font-size:.83rem;margin-right:auto">
-          <label style="color:var(--muted);white-space:nowrap">ימים אחורה:</label>
-          <input type="number" min="1" max="365" value="${S.recruiterDaysBack}"
-            style="width:64px;padding:.3rem .5rem;border:1px solid var(--border);border-radius:6px;font-size:.83rem"
-            onchange="S.recruiterDaysBack=parseInt(this.value)||7;loadRecruiterData()">
-        </div>
+      </div>` : ''}
+      <div class="tabs" style="margin-bottom:1.2rem;border-bottom:2px solid var(--border)">
+        <div class="tab${S.recruiterTab==='single'?' active':''}" onclick="S.recruiterTab='single';renderRecruiterMain()">👤 תצוגת מגייס</div>
+        <div class="tab${S.recruiterTab==='overview'?' active':''}" onclick="S.recruiterTab='overview';renderRecruiterMain()">📊 מבט על</div>
       </div>
       <div id="recruiter-main"></div>
     `}`;
@@ -1210,10 +1237,6 @@ function renderRecruiterSingle(el){
   :'<div class="info" style="font-size:.82rem">אין מספרים חוזרים בתקופה זו.</div>';
 
   el.innerHTML=`
-    ${allDates.length?`<div class="info" style="margin-bottom:1rem;font-size:.83rem">
-      📅 טווח תאריכים בנתונים: <b>${fmtDate(allDates[0])}</b> עד <b>${fmtDate(allDates[allDates.length-1])}</b>
-      &nbsp;|&nbsp; ${allDates.length} ימים
-    </div>`:''}
     <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.2rem;flex-wrap:wrap">
       <label style="font-size:.85rem;font-weight:600;color:var(--muted)">בחר מגייס:</label>
       <select style="padding:.45rem .75rem;border:1px solid var(--border);border-radius:var(--radius);font-size:.88rem"

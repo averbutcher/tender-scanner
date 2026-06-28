@@ -587,21 +587,29 @@ async def recruiter_upload(excel: UploadFile = File(...), _: str = Depends(auth)
 
 
 @app.get("/api/recruiter/data")
-async def recruiter_data(days_back: int = Query(7), _: str = Depends(auth)):
+async def recruiter_data(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    _: str = Depends(auth),
+):
     import collections
-    from datetime import datetime as _dt, timedelta
 
     raw = _rj(RECRUITER_DATA_FILE, None)
     if not raw:
-        return {"last_updated": None, "recruiters": [], "all_dates": []}
+        return {"last_updated": None, "recruiters": [], "all_dates": [], "full_range": None}
 
     cfg = _load_recruiter_config()
     recruiter_map = {r["extension"]: r["name"] for r in cfg.get("recruiters", [])}
     long_sec = cfg.get("long_call_threshold_minutes", 8) * 60
     repeat_min = cfg.get("repeat_call_threshold", 2)
-    cutoff = (_dt.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
-    calls = [c for c in raw.get("calls", []) if c["date"] >= cutoff]
+    all_calls = raw.get("calls", [])
+    all_call_dates = sorted(set(c["date"] for c in all_calls))
+    full_range = {"from": all_call_dates[0], "to": all_call_dates[-1]} if all_call_dates else None
+
+    df = date_from or (all_call_dates[0] if all_call_dates else "")
+    dt = date_to or (all_call_dates[-1] if all_call_dates else "")
+    calls = [c for c in all_calls if df <= c["date"] <= dt]
     all_dates = sorted(set(c["date"] for c in calls))
 
     by_ext: dict = collections.defaultdict(list)
@@ -665,4 +673,4 @@ async def recruiter_data(days_back: int = Query(7), _: str = Depends(auth)):
     known_order = {r["extension"]: i for i, r in enumerate(cfg.get("recruiters", []))}
     recruiters.sort(key=lambda r: known_order.get(r["extension"], 999))
 
-    return {"last_updated": raw.get("last_updated"), "all_dates": all_dates, "recruiters": recruiters}
+    return {"last_updated": raw.get("last_updated"), "all_dates": all_dates, "full_range": full_range, "recruiters": recruiters}
