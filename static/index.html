@@ -1278,7 +1278,20 @@ function renderRecruiterOverview(el){
   const d=S.recruiterData;
   if(!d?.recruiters?.length){ el.innerHTML='<div class="info">אין נתוני מגייסים לתקופה זו.</div>'; return; }
 
-  const recs=d.recruiters;
+  if(!S.overviewSort) S.overviewSort={key:'total_calls',asc:false};
+  const {key,asc}=S.overviewSort;
+
+  const recs=[...d.recruiters].sort((a,b)=>{
+    const av=key==='name'?a.name:a[key], bv=key==='name'?b.name:b[key];
+    if(typeof av==='string') return asc?av.localeCompare(bv):bv.localeCompare(av);
+    return asc?av-bv:bv-av;
+  });
+
+  const arrow=k=>k===key?(asc?' ▲':' ▼'):'';
+  const th=(label,k)=>`<th style="text-align:${k==='name'?'right':'center'};cursor:pointer;user-select:none;white-space:nowrap"
+    onclick="S.overviewSort=S.overviewSort?.key==='${k}'?{key:'${k}',asc:!S.overviewSort.asc}:{key:'${k}',asc:false};renderRecruiterMain()"
+    >${label}${arrow(k)}</th>`;
+
   const callsItems=recs.map(r=>({l:r.name, v:r.total_calls}));
   const ansItems=recs.map(r=>({l:r.name, v:r.answer_rate,
     color:r.answer_rate>=70?'#16a34a':r.answer_rate>=50?'#b45309':'#b91c1c'}));
@@ -1289,10 +1302,10 @@ function renderRecruiterOverview(el){
     <div style="overflow-x:auto;margin-bottom:1.5rem">
       <table class="rec-table" style="min-width:620px">
         <thead><tr>
-          <th>מגייס</th><th style="text-align:center">סה"כ שיחות</th><th style="text-align:center">שנענו</th>
-          <th style="text-align:center">% מענה</th><th style="text-align:center">דקות שיחה</th>
-          <th style="text-align:center">ממוצע/יום</th><th style="text-align:center">דקות לשיחה</th>
-          <th style="text-align:center">ימי עבודה</th>
+          ${th('מגייס','name')}${th('סה"כ שיחות','total_calls')}${th('שנענו','answered_calls')}
+          ${th('% מענה','answer_rate')}${th('דקות שיחה','total_minutes')}
+          ${th('ממוצע/יום','avg_calls_per_day')}${th('דקות לשיחה','avg_duration_minutes')}
+          ${th('ימי עבודה','work_days')}
         </tr></thead>
         <tbody>${recs.map(r=>`
           <tr style="cursor:pointer" onclick="S.recruiterSelected='${esc(r.extension)}';S.recruiterTab='single';renderRecruiterMain()">
