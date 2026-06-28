@@ -24,6 +24,7 @@ credentials:
       role: user
       apps:
         - tender_scanner
+        - recruiter_analysis
 cookie:
   expiry_days: 30
   key: tender_scanner_secret_key_change_this
