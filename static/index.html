@@ -1052,7 +1052,8 @@ function svgBars(items, opts={}) {
     }
     const lbl=String(d.l);
     if(items.length>7){
-      svg+=`<text x="${(x+bW/2).toFixed(1)}" y="${(pT+cH+8).toFixed(1)}" text-anchor="end" font-size="8.5" fill="#6b7280" transform="rotate(-38,${(x+bW/2).toFixed(1)},${(pT+cH+8).toFixed(1)})">${esc(lbl)}</text>`;
+      const lx=(x+bW/2).toFixed(1), ly=(pT+cH+12).toFixed(1);
+      svg+=`<text x="${lx}" y="${ly}" text-anchor="end" font-size="8.5" fill="#6b7280" transform="rotate(-45,${lx},${ly})">${esc(lbl)}</text>`;
     } else {
       svg+=`<text x="${(x+bW/2).toFixed(1)}" y="${(pT+cH+14).toFixed(1)}" text-anchor="middle" font-size="9.5" fill="#6b7280">${esc(lbl)}</text>`;
     }
