@@ -1231,7 +1231,7 @@ function renderRecruiterSingle(el){
     <div class="rec-chart-grid">
       <div class="rec-chart-card">
         <div class="rec-chart-title">התפלגות שעתית — דקות שיחה</div>
-        ${svgBars(hourlyItems,{color:'#2563eb',unit:"'"})}
+        ${svgBars(hourlyItems,{color:'#2563eb'})}
       </div>
       <div class="rec-chart-card">
         <div class="rec-chart-title">שיחות לפי יום</div>
@@ -1240,7 +1240,7 @@ function renderRecruiterSingle(el){
     </div>
     <div class="rec-chart-card" style="margin-bottom:1.2rem">
       <div class="rec-chart-title">דקות שיחה לפי יום</div>
-      ${svgBars(dailyMinItems,{color:'#0891b2',unit:"'",h:160})}
+      ${svgBars(dailyMinItems,{color:'#0891b2',h:160})}
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem">
@@ -1302,7 +1302,7 @@ function renderRecruiterOverview(el){
     <div class="rec-chart-grid">
       <div class="rec-chart-card">
         <div class="rec-chart-title">דקות שיחה כוללות</div>
-        ${svgBars(minItems,{unit:"'"})}
+        ${svgBars(minItems,{color:'#0891b2'})}
       </div>
       <div class="rec-chart-card">
         <div class="rec-chart-title">ממוצע שיחות ליום</div>
