@@ -384,8 +384,13 @@ document.getElementById('login-form').addEventListener('submit', async e => {
   fd.append('username', document.getElementById('l-user').value.trim());
   fd.append('password', document.getElementById('l-pass').value);
   try {
-    const user = await api('POST', '/api/login', fd, true);
-    if (!user) return;
+    const r = await fetch('/api/login', {method:'POST', credentials:'same-origin', body:fd});
+    if (!r.ok) {
+      err.textContent = '❌ שם משתמש או סיסמה שגויים';
+      err.classList.remove('hidden');
+      return;
+    }
+    const user = await r.json();
     S.user = user;
     const saved = localStorage.getItem('activeApp');
     S.activeApp = (saved && user.apps.includes(saved)) ? saved : (user.apps[0] || 'tender_scanner');
