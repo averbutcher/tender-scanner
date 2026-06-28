@@ -1033,7 +1033,7 @@ async function saveSettings() {
 function svgBars(items, opts={}) {
   const {color='#2563eb', unit='', h=170} = opts;
   if (!items.length) return '<div style="color:var(--muted);font-size:.82rem;padding:.5rem 0">אין נתונים</div>';
-  const W=600, H=h, pT=10, pR=8, pB=items.length>7?46:34, pL=8;
+  const W=600, H=h, pT=10, pR=8, pB=items.length>12?46:34, pL=8;
   const cW=W-pL-pR, cH=H-pT-pB;
   const maxV=Math.max(...items.map(d=>d.v), 0.001);
   const slot=cW/items.length, bW=Math.max(slot*0.65,2);
@@ -1051,7 +1051,7 @@ function svgBars(items, opts={}) {
       svg+=`<text x="${(x+bW/2).toFixed(1)}" y="${(y-4).toFixed(1)}" text-anchor="middle" font-size="9" fill="#374151">${vLabel}${unit}</text>`;
     }
     const lbl=String(d.l);
-    if(items.length>7){
+    if(items.length>12){
       const lx=(x+bW/2).toFixed(1), ly=(pT+cH+12).toFixed(1);
       svg+=`<text x="${lx}" y="${ly}" text-anchor="end" font-size="8.5" fill="#6b7280" transform="rotate(-45,${lx},${ly})">${esc(lbl)}</text>`;
     } else {
