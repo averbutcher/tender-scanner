@@ -205,7 +205,13 @@ details.sb-exp summary::before{content:"▶ "}
     <div class="login-sub">אנא התחבר כדי להמשיך</div>
     <form id="login-form">
       <div class="field"><label>שם משתמש</label><input id="l-user" autocomplete="username" dir="ltr"></div>
-      <div class="field"><label>סיסמה</label><input id="l-pass" type="password" autocomplete="current-password" dir="ltr"></div>
+      <div class="field"><label>סיסמה</label>
+        <div style="position:relative">
+          <input id="l-pass" type="password" autocomplete="current-password" dir="ltr" style="width:100%;padding-left:2.2rem">
+          <button type="button" onclick="const p=document.getElementById('l-pass');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'👁':'🙈'"
+            style="position:absolute;left:.5rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;padding:0;line-height:1">👁</button>
+        </div>
+      </div>
       <button class="btn-login" type="submit">כניסה</button>
       <div id="login-err" class="login-err hidden"></div>
     </form>
@@ -386,7 +392,7 @@ document.getElementById('login-form').addEventListener('submit', async e => {
     await initApp();
     showApp();
   } catch(ex) {
-    err.textContent = ex.message;
+    err.textContent = '❌ שם משתמש או סיסמה שגויים';
     err.classList.remove('hidden');
   }
 });
