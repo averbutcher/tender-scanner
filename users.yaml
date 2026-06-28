@@ -17,10 +17,10 @@ credentials:
       apps:
         - tender_scanner
         - shift_comparison
-    user1:
-      email: user@example.com
-      name: User
-      password: "$2b$12$cPk0AH4TAWh47mtt6Eh3p.iNyWXwrgMJH1lKJT/WAGpBzctJ8hwu2"
+    vadim:
+      email: vadim@electra-target.co.il
+      name: Vadim
+      password: "$2b$12$ZitJpCsC5b7JJ7ybEaelhepyjH21A8e/g12l9SCnNlW7C/Dfs8Z1."
       role: user
       apps:
         - tender_scanner
