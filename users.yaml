@@ -24,6 +24,7 @@ credentials:
       role: user
       apps:
         - tender_scanner
+        - shift_comparison
         - recruiter_analysis
 cookie:
   expiry_days: 30
