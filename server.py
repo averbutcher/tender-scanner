@@ -532,7 +532,11 @@ async def recruiter_upload(excel: UploadFile = File(...), _: str = Depends(auth)
         tmp_path = Path(tmp.name)
 
     try:
-        df = pd.read_excel(str(tmp_path), sheet_name="פיד", header=0)
+        fname = excel.filename or ""
+        if fname.lower().endswith(".csv"):
+            df = pd.read_csv(str(tmp_path))
+        else:
+            df = pd.read_excel(str(tmp_path), sheet_name="פיד", header=0)
     finally:
         tmp_path.unlink(missing_ok=True)
 
