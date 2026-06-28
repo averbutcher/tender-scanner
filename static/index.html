@@ -1294,8 +1294,7 @@ function renderRecruiterOverview(el){
     >${label}${arrow(k)}</th>`;
 
   const callsItems=recs.map(r=>({l:r.name, v:r.total_calls}));
-  const ansItems=recs.map(r=>({l:r.name, v:r.answer_rate,
-    color:r.answer_rate>=70?'#16a34a':r.answer_rate>=50?'#b45309':'#b91c1c'}));
+  const ansItems=recs.map(r=>({l:r.name, v:r.answer_rate}));
   const minItems=recs.map(r=>({l:r.name, v:r.total_minutes, color:'#0891b2'}));
   const avgItems=recs.map(r=>({l:r.name, v:r.avg_calls_per_day, color:'#7c3aed'}));
 
