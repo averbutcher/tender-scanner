@@ -1173,6 +1173,10 @@ function renderRecruiterApp(){
 function renderRecruiterMain(){
   const el=document.getElementById('recruiter-main');
   if(!el) return;
+  document.querySelectorAll('#recruiter-app .tabs .tab').forEach(t=>{
+    const isSingle=t.textContent.includes('תצוגת מגייס');
+    t.classList.toggle('active', isSingle ? S.recruiterTab==='single' : S.recruiterTab==='overview');
+  });
   if(S.recruiterTab==='single') renderRecruiterSingle(el);
   else renderRecruiterOverview(el);
 }
