@@ -852,10 +852,17 @@ function renderManualTab(el) {
   el.innerHTML = `
     <h3 style="font-size:1rem;margin-bottom:.5rem">ניתוח מכרז לפי קישור</h3>
     <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">הדבק קישור למכרז מ-mr.gov.il וקבל ניתוח מיידי</p>
-    <div style="display:flex;gap:.5rem;margin-bottom:1rem">
+    <div style="display:flex;gap:.5rem;margin-bottom:1.5rem">
       <input id="manual-url" style="flex:1;padding:.55rem .8rem;border:1px solid var(--border);border-radius:var(--radius);direction:ltr;font-size:.88rem" placeholder="https://mr.gov.il/...">
       <button class="btn btn-primary" onclick="runManualAnalyze()">🔍 נתח</button>
     </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin-bottom:1.5rem">
+    <h3 style="font-size:1rem;margin-bottom:.5rem">ניתוח מכרז לפי קובץ PDF</h3>
+    <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">העלה קובץ PDF של מכרז וקבל ניתוח מיידי</p>
+    <label class="btn btn-outline" style="cursor:pointer;display:inline-flex;align-items:center;gap:.4rem;margin-bottom:1rem">
+      📄 בחר קובץ PDF
+      <input type="file" accept=".pdf" style="display:none" onchange="runPdfAnalyze(this.files[0])">
+    </label>
     <div id="manual-result"></div>`;
   if (S.manualResult) renderManualResult();
 }
@@ -867,6 +874,23 @@ async function runManualAnalyze() {
   el.innerHTML = `<div class="info">⏳ מנתח את המכרז... (עד 90 שניות)</div>`;
   try {
     const r = await POST('/api/analyze', {url});
+    if (!r) return;
+    S.manualResult = r;
+    S.manualChat = [];
+    renderManualResult();
+  } catch(e) {
+    el.innerHTML = `<div class="error">שגיאה: ${esc(e.message)}</div>`;
+  }
+}
+
+async function runPdfAnalyze(file) {
+  if (!file) return;
+  const el = document.getElementById('manual-result');
+  el.innerHTML = `<div class="info">⏳ מנתח את הקובץ... (עד 90 שניות)</div>`;
+  const fd = new FormData();
+  fd.append('pdf', file);
+  try {
+    const r = await api('POST', '/api/analyze-pdf', fd, true);
     if (!r) return;
     S.manualResult = r;
     S.manualChat = [];

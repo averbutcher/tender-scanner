@@ -4,6 +4,7 @@ import os
 import secrets
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -21,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from analyzer import analyze_tender, distill_knowledge
 from engine import load_config, save_config, parse_message, parse_excel, compare, export_to_excel, find_suspicious_lines
-from scraper import Tender, _extract_id_from_url, fetch_tender_detail, fetch_tender_list
+from scraper import Tender, _extract_id_from_url, _extract_pdf_text_from_bytes, fetch_tender_detail, fetch_tender_list
 from state import filter_new, load_seen, save_seen
 
 BASE_DIR = Path(__file__).parent
@@ -316,6 +317,38 @@ async def analyze_url(body: dict, u: str = Depends(auth)):
         raise HTTPException(408, "timeout")
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+# ── Analyze uploaded PDF ──────────────────────────────────────────────────────
+
+@app.post("/api/analyze-pdf")
+async def analyze_pdf_upload(pdf: UploadFile = File(...), u: str = Depends(auth)):
+    body = await pdf.read()
+    if not body:
+        raise HTTPException(400, "קובץ ריק")
+    pdf_text = _extract_pdf_text_from_bytes(body)
+    if not pdf_text.strip():
+        raise HTTPException(422, "לא ניתן לחלץ טקסט מהקובץ")
+    settings = _load_settings()
+    client = _client()
+    knowledge = _load_knowledge()
+    filename = pdf.filename or "מכרז"
+    title = filename.replace(".pdf", "").replace("_", " ")
+    tender = Tender(
+        tender_id=f"pdf_{int(time.time())}",
+        title=title,
+        url="",
+        publisher="",
+        deadline="",
+        raw_metadata={"publish_date": "", "update_date": ""},
+        pdf_text=pdf_text,
+    )
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None, lambda: analyze_tender(tender, settings, client, knowledge=knowledge)
+    )
+    _append_history(result, u)
+    return result
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
