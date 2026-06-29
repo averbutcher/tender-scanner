@@ -684,7 +684,10 @@ async def export_word(body: dict, _: str = Depends(auth)):
         return par
 
     h(f"ניתוח מכרז: {r.get('title','')}", 1)
-    p(f"מפרסם: {r.get('publisher','')}  |  מועד הגשה: {r.get('deadline','')}  |  פרסום: {r.get('publish_date','')}")
+    if r.get('publisher'):    p(f"מפרסם: {r['publisher']}")
+    if r.get('publish_date'): p(f"תאריך פרסום: {r['publish_date']}")
+    if r.get('deadline'):     p(f"מועד הגשה: {r['deadline']}")
+    if r.get('update_date'):  p(f"תאריך עדכון: {r['update_date']}")
     doc.add_paragraph()
 
     h("ניתוח", 2)
@@ -754,11 +757,16 @@ async def export_questions_word(body: dict, _: str = Depends(auth)):
         run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x5F)
         set_rtl_run(run)
 
-    meta = doc.add_paragraph()
-    set_rtl(meta)
-    run = meta.add_run(f"מפרסם: {r.get('publisher','')}  |  מועד הגשה: {r.get('deadline','')}")
-    run.font.name = "Arial"; run.font.size = Pt(11)
-    set_rtl_run(run)
+    def meta_line(text):
+        p = doc.add_paragraph(); set_rtl(p)
+        run = p.add_run(text)
+        run.font.name = "Arial"; run.font.cs_name = "Arial"; run.font.size = Pt(11)
+        set_rtl_run(run)
+
+    if r.get('publisher'):    meta_line(f"מפרסם: {r['publisher']}")
+    if r.get('publish_date'): meta_line(f"תאריך פרסום: {r['publish_date']}")
+    if r.get('deadline'):     meta_line(f"מועד הגשה: {r['deadline']}")
+    if r.get('update_date'):  meta_line(f"תאריך עדכון: {r['update_date']}")
     doc.add_paragraph()
 
     # Parse pipe-separated questions
