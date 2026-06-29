@@ -921,7 +921,72 @@ function renderFavoritesTab(el) {
   const favs = S.history.filter(r => S.favorites.includes(r.tender_id));
   if (!favs.length) { el.innerHTML = '<div class="info">לא הוספת מועדפים עדיין.</div>'; return; }
   el.innerHTML = `<div style="font-size:.85rem;color:var(--muted);margin-bottom:.8rem">${favs.length} מכרזים מועדפים</div>`;
-  favs.forEach(r => { el.innerHTML += tenderCard(r, 'all', 'fav'); });
+  favs.forEach(r => { el.innerHTML += tenderCard(r, 'all', 'fav') + favActions(r); });
+}
+
+function favActions(r) {
+  const tid = r.tender_id;
+  return `<div class="fav-actions" id="favact_${tid}" style="display:flex;gap:.5rem;flex-wrap:wrap;padding:.6rem 1rem 1rem;background:var(--bg2);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius) var(--radius);margin-bottom:1rem">
+    <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:.35rem" title="העלה קובץ תשובות הבהרה לניתוח מחדש">
+      📥 העלה תשובות הבהרה
+      <input type="file" accept=".txt,.pdf,.docx" style="display:none" onchange="reanalyzeWithAnswers('${tid}', this.files[0])">
+    </label>
+    <button class="btn btn-outline btn-sm" onclick="exportTenderExcel('${tid}')">📊 ייצא לאקסל</button>
+    <button class="btn btn-outline btn-sm" onclick="exportTenderWord('${tid}')">📝 ייצא לוורד</button>
+  </div>`;
+}
+
+async function reanalyzeWithAnswers(tid, file) {
+  if (!file) return;
+  const r = S.history.find(x => x.tender_id === tid);
+  if (!r) return;
+  const el = document.getElementById(`card_fav_${tid}`);
+  if (el) el.querySelector('.analysis-text') && (el.querySelector('.analysis-text').textContent = '⏳ מנתח מחדש עם תשובות הבהרה...');
+  const fd = new FormData();
+  fd.append('answers', file);
+  fd.append('tender_data', JSON.stringify(r));
+  try {
+    const res = await api('POST', '/api/tender/reanalyze-with-answers', fd, true);
+    if (!res) return;
+    const idx = S.history.findIndex(x => x.tender_id === tid);
+    if (idx >= 0) S.history[idx] = {...S.history[idx], ...res};
+    toast('✅ ניתוח מחדש הושלם!');
+    renderTenderApp();
+  } catch(e) { toast(`שגיאה: ${e.message}`, 'error'); }
+}
+
+async function exportTenderExcel(tid) {
+  const r = S.history.find(x => x.tender_id === tid);
+  if (!r) return;
+  try {
+    const resp = await fetch('/api/tender/export-excel', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(r)
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const blob = await resp.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ניתוח_${tid}.xlsx`;
+    a.click();
+  } catch(e) { toast(`שגיאה: ${e.message}`, 'error'); }
+}
+
+async function exportTenderWord(tid) {
+  const r = S.history.find(x => x.tender_id === tid);
+  if (!r) return;
+  try {
+    const resp = await fetch('/api/tender/export-word', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(r)
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const blob = await resp.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ניתוח_${tid}.docx`;
+    a.click();
+  } catch(e) { toast(`שגיאה: ${e.message}`, 'error'); }
 }
 
 // ── Learning tab ──────────────────────────
