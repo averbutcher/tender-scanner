@@ -328,8 +328,23 @@ def _extract_pdf_text_from_bytes(body: bytes) -> str:
             tmp_path = tmp.name
         reader = PdfReader(tmp_path)
         pages = [page.extract_text() or "" for page in reader.pages]
+        text = "\n".join(pages).strip()
+        if text:
+            Path(tmp_path).unlink(missing_ok=True)
+            return text[:50000]
+        # Scanned PDF — fall back to OCR
+        try:
+            import pytesseract
+            from pdf2image import convert_from_path
+            images = convert_from_path(tmp_path, dpi=200)
+            ocr_pages = []
+            for img in images[:30]:  # cap at 30 pages to stay within limits
+                ocr_pages.append(pytesseract.image_to_string(img, lang="heb+eng"))
+            text = "\n".join(ocr_pages).strip()
+        except Exception:
+            text = ""
         Path(tmp_path).unlink(missing_ok=True)
-        return "\n".join(pages)[:50000]
+        return text[:50000]
     except Exception:
         return ""
 
