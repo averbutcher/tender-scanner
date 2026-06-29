@@ -896,7 +896,7 @@ async function runPdfAnalyze(file) {
     S.manualChat = [];
     renderManualResult();
   } catch(e) {
-    el.innerHTML = `<div class="error">שגיאה: ${esc(e.message)}</div>`;
+    el.innerHTML = `<div class="error">שגיאה: ${esc(e.message || 'timeout או בעיה בשרת — נסה קובץ קטן יותר')}</div>`;
   }
 }
 

@@ -332,16 +332,16 @@ def _extract_pdf_text_from_bytes(body: bytes) -> str:
         if text:
             Path(tmp_path).unlink(missing_ok=True)
             return text[:50000]
-        # Scanned PDF — fall back to OCR
+        # Scanned PDF — fall back to OCR (first 15 pages only)
         try:
             import pytesseract
             from pdf2image import convert_from_path
-            images = convert_from_path(tmp_path, dpi=200)
+            images = convert_from_path(tmp_path, dpi=150, first_page=1, last_page=15)
             ocr_pages = []
-            for img in images[:30]:  # cap at 30 pages to stay within limits
+            for img in images:
                 ocr_pages.append(pytesseract.image_to_string(img, lang="heb+eng"))
             text = "\n".join(ocr_pages).strip()
-        except Exception:
+        except Exception as ocr_err:
             text = ""
         Path(tmp_path).unlink(missing_ok=True)
         return text[:50000]
