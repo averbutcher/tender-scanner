@@ -775,8 +775,8 @@ async def export_questions_word(body: dict, _: str = Depends(auth)):
 
     # Column order as written in file — RTL doc renders col1 on the right
     # so מספר(col1) | עמוד(col2) | סעיף(col3) | שאלה(col4) displays correctly R→L
-    headers_rtl  = ["מספר", "עמוד", "סעיף", "שאלה"]
-    col_widths_rtl = [Cm(1.5), Cm(2), Cm(2.5), Cm(11)]
+    headers_rtl  = ["שאלה", "סעיף", "עמוד", "מספר"]
+    col_widths_rtl = [Cm(11), Cm(2.5), Cm(2), Cm(1.5)]
 
     def add_shd(tc, color):
         tcPr = tc.get_or_add_tcPr()
@@ -811,7 +811,7 @@ async def export_questions_word(body: dict, _: str = Depends(auth)):
     for ri, (num, page, section, question) in enumerate(rows):
         row_cells = table.rows[ri+1].cells
         fill_color = 'EEF3FA' if ri % 2 == 0 else 'FFFFFF'
-        for ci, text in enumerate([num, page, section, question]):
+        for ci, text in enumerate([question, section, page, num]):
             cell = row_cells[ci]
             add_shd(cell._tc, fill_color)
             cell_rtl_run(cell, text, size=10)
