@@ -32,8 +32,6 @@ credentials:
       password: "$2b$12$1W85KieXhBh/m.cPDGF/SenVs.NqTyBajF1INzXqavK0LRS.RX/Ja"
       role: user
       apps:
-        - tender_scanner
-        - shift_comparison
         - recruiter_analysis
 cookie:
   expiry_days: 30
