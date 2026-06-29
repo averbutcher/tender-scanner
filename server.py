@@ -462,90 +462,91 @@ async def generate_questions(body: dict, _: str = Depends(auth)):
 
 @app.post("/api/tender/export-excel")
 async def export_excel(body: dict, _: str = Depends(auth)):
-    import io
+    import io, re
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
     r = body
     analysis = r.get("analysis", "")
+
+    # Extract financial sections from analysis
+    fin_keys = ["הערכת היקף כספי", "ערך שנתי", "בסיס לחישוב", "כוח אדם נדרש", "אורך חוזה", "המלצה", "אתגרים", "סיכונים"]
+    sections: dict[str, list[str]] = {}
+    current_key = None
+    for line in analysis.splitlines():
+        clean = line.strip().replace("**","").replace("#","").strip()
+        if not clean: continue
+        matched = next((k for k in fin_keys if k in clean), None)
+        if matched:
+            current_key = matched
+            sections.setdefault(current_key, [])
+        if current_key:
+            sections[current_key].append(clean)
+
     wb = Workbook()
     ws = wb.active
-    ws.title = "ניתוח מכרז"
+    ws.title = "ניתוח פיננסי"
     ws.sheet_view.rightToLeft = True
 
-    hfill = PatternFill("solid", fgColor="1E3A5F")
-    afill = PatternFill("solid", fgColor="EEF3FA")
-    wfill = PatternFill("solid", fgColor="FFFFFF")
-    thin  = Border(
-        left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
-        top=Side(style='thin', color='CCCCCC'),  bottom=Side(style='thin', color='CCCCCC')
-    )
-    ws.column_dimensions['A'].width = 30
-    ws.column_dimensions['B'].width = 55
+    hfill  = PatternFill("solid", fgColor="1E3A5F")
+    sfill  = PatternFill("solid", fgColor="2563EB")
+    afill  = PatternFill("solid", fgColor="EEF3FA")
+    wfill  = PatternFill("solid", fgColor="FFFFFF")
+    thin   = Border(*[Side(style='thin', color='CCCCCC')]*0,
+                    left=Side(style='thin', color='CCCCCC'),
+                    right=Side(style='thin', color='CCCCCC'),
+                    top=Side(style='thin', color='CCCCCC'),
+                    bottom=Side(style='thin', color='CCCCCC'))
 
-    def hrow(label, row):
+    ws.column_dimensions['A'].width = 32
+    ws.column_dimensions['B'].width = 58
+
+    def hrow(label, row, fill=None):
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
         c = ws.cell(row, 1, label)
         c.font = Font(bold=True, color="FFFFFF", size=12, name="Arial")
-        c.fill = hfill
+        c.fill = fill or hfill
         c.alignment = Alignment(horizontal="right", vertical="center")
-        ws.row_dimensions[row].height = 22
+        ws.row_dimensions[row].height = 24
 
     def drow(label, value, row, alt=False):
         fill = afill if alt else wfill
         c1 = ws.cell(row, 1, label or "")
-        c1.font = Font(bold=True, name="Arial", size=10)
+        c1.font = Font(bold=bool(label), name="Arial", size=10)
         c1.fill = fill; c1.border = thin
         c1.alignment = Alignment(horizontal="right", vertical="top", wrap_text=True)
         c2 = ws.cell(row, 2, str(value) if value else "")
         c2.font = Font(name="Arial", size=10)
         c2.fill = fill; c2.border = thin
         c2.alignment = Alignment(horizontal="right", vertical="top", wrap_text=True)
-        ws.row_dimensions[row].height = max(15, min(80, len(str(value or "")) // 4 + 15))
+        h = max(18, min(90, len(str(value or "")) // 3 + 15))
+        ws.row_dimensions[row].height = h
 
     row = 1
-    hrow(f"ניתוח מכרז: {r.get('title','')}", row); row += 1
-    drow("מפרסם",        r.get("publisher",""),    row, False); row += 1
-    drow("מועד הגשה",    r.get("deadline",""),     row, True);  row += 1
-    drow("תאריך פרסום",  r.get("publish_date",""), row, False); row += 1
+    hrow(f"ניתוח פיננסי: {r.get('title','')}", row); row += 1
+    drow("מפרסם",       r.get("publisher",""),    row, False); row += 1
+    drow("מועד הגשה",   r.get("deadline",""),     row, True);  row += 1
+    drow("תאריך פרסום", r.get("publish_date",""), row, False); row += 1
     row += 1
 
-    section_keys = ["הערכת היקף כספי", "כוח אדם נדרש", "אורך חוזה", "רלוונטיות", "המלצה", "אתגרים", "סיכונים", "סיכום"]
-    sections: dict[str, list[str]] = {}
-    current_key = None
-    for line in analysis.splitlines():
-        matched = next((k for k in section_keys if k in line), None)
-        if matched:
-            current_key = matched
-            sections.setdefault(current_key, [])
-        if current_key and line.strip():
-            sections[current_key].append(line.strip())
-
-    if sections:
-        hrow("סעיפים עיקריים", row); row += 1
-        for i, (key, lines) in enumerate(sections.items()):
-            drow(key, "\n".join(lines), row, i % 2 == 0); row += 1
-        row += 1
-
-    hrow("ניתוח מלא", row); row += 1
-    for i, line in enumerate(analysis.splitlines()):
-        if line.strip():
-            clean = line.strip().replace("**","").replace("##","").replace("#","")
-            drow("", clean, row, i % 2 == 0); row += 1
-
-    if r.get("questions"):
-        row += 1
-        hrow("שאלות הבהרה", row); row += 1
-        for i, line in enumerate(r["questions"].splitlines()):
-            if line.strip():
-                drow("", line.strip(), row, i % 2 == 0); row += 1
+    # Financial sections
+    finance_order = ["הערכת היקף כספי", "ערך שנתי", "בסיס לחישוב", "כוח אדם נדרש", "אורך חוזה", "המלצה", "אתגרים", "סיכונים"]
+    hrow("ניתוח פיננסי מפורט", row, sfill); row += 1
+    shown = set()
+    for key in finance_order:
+        lines = sections.get(key)
+        if not lines: continue
+        if key in shown: continue
+        shown.add(key)
+        text = "\n".join(l for l in lines if l.strip())
+        drow(key, text, row, len(shown) % 2 == 0); row += 1
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
     tid = r.get("tender_id", "tender")
     return StreamingResponse(buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''%D7%A0%D7%99%D7%AA%D7%95%D7%97_{tid}.xlsx"})
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''%D7%A4%D7%99%D7%A0%D7%A0%D7%A1%D7%99_{tid}.xlsx"})
 
 
 # ── Export Word (full analysis) ────────────────────────────────────────────────
@@ -557,6 +558,7 @@ async def export_word(body: dict, _: str = Depends(auth)):
     from docx.shared import Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
 
     r = body
     analysis  = r.get("analysis", "")
@@ -564,28 +566,38 @@ async def export_word(body: dict, _: str = Depends(auth)):
     knowledge = _load_knowledge()
 
     doc = Document()
+    # Set document-level RTL
     sectPr = doc.sections[0]._sectPr
-    bidi = OxmlElement('w:bidi'); sectPr.append(bidi)
+    sectPr.append(OxmlElement('w:bidi'))
 
-    def set_rtl(p):
-        pPr = p._p.get_or_add_pPr()
-        pPr.append(OxmlElement('w:bidi'))
-        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    def set_rtl_para(par):
+        pPr = par._p.get_or_add_pPr()
+        b = OxmlElement('w:bidi'); b.set(qn('w:val'), '1'); pPr.append(b)
+        jc = OxmlElement('w:jc');  jc.set(qn('w:val'), 'right'); pPr.append(jc)
+
+    def set_rtl_run(run):
+        rPr = run._r.get_or_add_rPr()
+        rtl = OxmlElement('w:rtl'); rtl.set(qn('w:val'), '1'); rPr.append(rtl)
+        cs  = OxmlElement('w:cs');  rPr.append(cs)
 
     def h(text, level=1):
-        p = doc.add_heading(text, level=level)
-        set_rtl(p)
-        for run in p.runs:
+        par = doc.add_heading(text, level=level)
+        set_rtl_para(par)
+        for run in par.runs:
             run.font.name = "Arial"
+            run.font.cs_name = "Arial"
+            set_rtl_run(run)
             if level == 1:
                 run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x5F)
-        return p
+        return par
 
     def p(text, bold=False):
         par = doc.add_paragraph()
-        set_rtl(par)
+        set_rtl_para(par)
         run = par.add_run(str(text))
-        run.font.name = "Arial"; run.font.size = Pt(11); run.bold = bold
+        run.font.name = "Arial"; run.font.cs_name = "Arial"
+        run.font.size = Pt(11); run.bold = bold
+        set_rtl_run(run)
         return par
 
     h(f"ניתוח מכרז: {r.get('title','')}", 1)
@@ -641,21 +653,29 @@ async def export_questions_word(body: dict, _: str = Depends(auth)):
     sectPr = doc.sections[0]._sectPr
     sectPr.append(OxmlElement('w:bidi'))
 
-    def set_rtl(p):
-        pPr = p._p.get_or_add_pPr()
-        pPr.append(OxmlElement('w:bidi'))
-        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    def set_rtl(par):
+        pPr = par._p.get_or_add_pPr()
+        b = OxmlElement('w:bidi'); b.set(qn('w:val'), '1'); pPr.append(b)
+        jc = OxmlElement('w:jc');  jc.set(qn('w:val'), 'right'); pPr.append(jc)
+
+    def set_rtl_run(run):
+        rPr = run._r.get_or_add_rPr()
+        rtl = OxmlElement('w:rtl'); rtl.set(qn('w:val'), '1'); rPr.append(rtl)
+        rPr.append(OxmlElement('w:cs'))
+        run.font.cs_name = "Arial"
 
     title_p = doc.add_heading(f"שאלות הבהרה: {r.get('title','')}", 1)
     set_rtl(title_p)
     for run in title_p.runs:
-        run.font.name = "Arial"
+        run.font.name = "Arial"; run.font.cs_name = "Arial"
         run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x5F)
+        set_rtl_run(run)
 
     meta = doc.add_paragraph()
     set_rtl(meta)
     run = meta.add_run(f"מפרסם: {r.get('publisher','')}  |  מועד הגשה: {r.get('deadline','')}")
     run.font.name = "Arial"; run.font.size = Pt(11)
+    set_rtl_run(run)
     doc.add_paragraph()
 
     # Parse pipe-separated questions
