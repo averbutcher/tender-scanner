@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from analyzer import analyze_tender, distill_knowledge
+from analyzer import analyze_tender, distill_knowledge, SYSTEM_PROMPT
 from engine import load_config, save_config, parse_message, parse_excel, compare, export_to_excel, find_suspicious_lines
 from scraper import Tender, _extract_id_from_url, _extract_pdf_text_from_bytes, fetch_tender_detail, fetch_tender_list
 from state import filter_new, load_seen, save_seen
@@ -410,179 +410,205 @@ async def reanalyze_with_answers(
     return result
 
 
+# ── Generate clarification questions ──────────────────────────────────────────
+
+@app.post("/api/tender/generate-questions")
+async def generate_questions(body: dict, _: str = Depends(auth)):
+    r = body
+    client = _client()
+    knowledge = _load_knowledge()
+    prompt = f"""אתה יועץ עסקי של Electra Target. קראת את הניתוח הבא של מכרז ממשלתי.
+
+כותרת: {r.get('title','')}
+מפרסם: {r.get('publisher','')}
+מועד הגשה: {r.get('deadline','')}
+ניתוח: {r.get('analysis','')}
+
+צור רשימה של 8-12 שאלות הבהרה שיש לשלוח למפרסם המכרז.
+השאלות צריכות להיות ממוקדות, מעשיות, ולסייע לחברה להבין טוב יותר את דרישות המכרז לפני הגשת הצעה.
+כתוב כל שאלה בשורה נפרדת, מספר כל שאלה. בעברית בלבד."""
+
+    system = SYSTEM_PROMPT
+    if knowledge:
+        system += "\n\nתובנות שנצברו:\n" + "\n".join(f"- {g}" for g in knowledge)
+
+    loop = asyncio.get_running_loop()
+    try:
+        resp = await loop.run_in_executor(
+            None,
+            lambda: client.messages.create(
+                model="claude-sonnet-4-6", max_tokens=1024, system=system,
+                messages=[{"role": "user", "content": prompt}]
+            )
+        )
+        return {"questions": resp.content[0].text}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 # ── Export Excel (financial analysis) ─────────────────────────────────────────
 
 @app.post("/api/tender/export-excel")
 async def export_excel(body: dict, _: str = Depends(auth)):
-    import re
+    import io
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from fastapi.responses import StreamingResponse
-    import io
 
     r = body
     analysis = r.get("analysis", "")
-
     wb = Workbook()
     ws = wb.active
-    ws.title = "ניתוח פיננסי"
+    ws.title = "ניתוח מכרז"
     ws.sheet_view.rightToLeft = True
 
-    header_fill = PatternFill("solid", fgColor="1E3A5F")
-    sub_fill    = PatternFill("solid", fgColor="2B5C9E")
-    alt_fill    = PatternFill("solid", fgColor="EEF3FA")
-    white_fill  = PatternFill("solid", fgColor="FFFFFF")
-    thin = Border(
+    hfill = PatternFill("solid", fgColor="1E3A5F")
+    afill = PatternFill("solid", fgColor="EEF3FA")
+    wfill = PatternFill("solid", fgColor="FFFFFF")
+    thin  = Border(
         left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
         top=Side(style='thin', color='CCCCCC'),  bottom=Side(style='thin', color='CCCCCC')
     )
-
-    ws.column_dimensions['A'].width = 28
-    ws.column_dimensions['B'].width = 52
+    ws.column_dimensions['A'].width = 30
+    ws.column_dimensions['B'].width = 55
 
     def hrow(label, row):
-        ws.cell(row, 1, label).font = Font(bold=True, color="FFFFFF", size=12, name="Arial")
-        ws.cell(row, 1).fill = header_fill
-        ws.cell(row, 1).alignment = Alignment(horizontal="right", vertical="center", wrap_text=True)
-        ws.cell(row, 2).fill = header_fill
-        ws.row_dimensions[row].height = 22
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+        c = ws.cell(row, 1, label)
+        c.font = Font(bold=True, color="FFFFFF", size=12, name="Arial")
+        c.fill = hfill
+        c.alignment = Alignment(horizontal="right", vertical="center")
+        ws.row_dimensions[row].height = 22
 
     def drow(label, value, row, alt=False):
-        fill = alt_fill if alt else white_fill
-        c1 = ws.cell(row, 1, label)
+        fill = afill if alt else wfill
+        c1 = ws.cell(row, 1, label or "")
         c1.font = Font(bold=True, name="Arial", size=10)
         c1.fill = fill; c1.border = thin
         c1.alignment = Alignment(horizontal="right", vertical="top", wrap_text=True)
-        c2 = ws.cell(row, 2, value)
+        c2 = ws.cell(row, 2, str(value) if value else "")
         c2.font = Font(name="Arial", size=10)
         c2.fill = fill; c2.border = thin
         c2.alignment = Alignment(horizontal="right", vertical="top", wrap_text=True)
-        ws.row_dimensions[row].height = max(15, min(60, len(str(value))//3))
+        ws.row_dimensions[row].height = max(15, min(80, len(str(value or "")) // 4 + 15))
 
     row = 1
     hrow(f"ניתוח מכרז: {r.get('title','')}", row); row += 1
-    drow("מפרסם", r.get("publisher",""), row, False); row += 1
-    drow("מועד הגשה", r.get("deadline",""), row, True); row += 1
-    drow("תאריך פרסום", r.get("publish_date",""), row, False); row += 1
+    drow("מפרסם",        r.get("publisher",""),    row, False); row += 1
+    drow("מועד הגשה",    r.get("deadline",""),     row, True);  row += 1
+    drow("תאריך פרסום",  r.get("publish_date",""), row, False); row += 1
     row += 1
 
-    hrow("ניתוח פיננסי", row); row += 1
-
-    # Extract financial sections from analysis text
-    sections = {
-        "הערכת היקף כספי": "", "כוח אדם נדרש": "", "אורך חוזה משוער": "",
-        "רלוונטיות": "", "המלצה": "", "אתגרים/סיכונים": "",
-    }
-    current = None
+    section_keys = ["הערכת היקף כספי", "כוח אדם נדרש", "אורך חוזה", "רלוונטיות", "המלצה", "אתגרים", "סיכונים", "סיכום"]
+    sections: dict[str, list[str]] = {}
+    current_key = None
     for line in analysis.splitlines():
-        for key in sections:
-            if key in line:
-                current = key; break
-        if current:
-            sections[current] += line + "\n"
+        matched = next((k for k in section_keys if k in line), None)
+        if matched:
+            current_key = matched
+            sections.setdefault(current_key, [])
+        if current_key and line.strip():
+            sections[current_key].append(line.strip())
 
-    for i, (label, value) in enumerate(sections.items()):
-        text = value.strip() or "לא צוין"
-        drow(label, text, row, i % 2 == 0); row += 1
+    if sections:
+        hrow("סעיפים עיקריים", row); row += 1
+        for i, (key, lines) in enumerate(sections.items()):
+            drow(key, "\n".join(lines), row, i % 2 == 0); row += 1
+        row += 1
 
-    row += 1
     hrow("ניתוח מלא", row); row += 1
     for i, line in enumerate(analysis.splitlines()):
         if line.strip():
-            drow("", line.strip(), row, i % 2 == 0); row += 1
+            clean = line.strip().replace("**","").replace("##","").replace("#","")
+            drow("", clean, row, i % 2 == 0); row += 1
+
+    if r.get("questions"):
+        row += 1
+        hrow("שאלות הבהרה", row); row += 1
+        for i, line in enumerate(r["questions"].splitlines()):
+            if line.strip():
+                drow("", line.strip(), row, i % 2 == 0); row += 1
 
     buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    filename = f"ניתוח_{r.get('tender_id','tender')}.xlsx"
-    return StreamingResponse(
-        buf,
+    wb.save(buf); buf.seek(0)
+    tid = r.get("tender_id", "tender")
+    return StreamingResponse(buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
-    )
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''%D7%A0%D7%99%D7%AA%D7%95%D7%97_{tid}.xlsx"})
 
 
 # ── Export Word (full analysis) ────────────────────────────────────────────────
 
 @app.post("/api/tender/export-word")
 async def export_word(body: dict, _: str = Depends(auth)):
-    from docx import Document
-    from docx.shared import Pt, RGBColor, Cm
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from fastapi.responses import StreamingResponse
     import io
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
 
     r = body
-    analysis = r.get("analysis", "")
+    analysis  = r.get("analysis", "")
+    questions = r.get("questions", "")
     knowledge = _load_knowledge()
-    system_prompt = open("analyzer.py").read()
 
     doc = Document()
-    # RTL section
-    from docx.oxml.ns import qn
-    from docx.oxml import OxmlElement
     sectPr = doc.sections[0]._sectPr
-    bidi = OxmlElement('w:bidi')
-    sectPr.append(bidi)
+    bidi = OxmlElement('w:bidi'); sectPr.append(bidi)
 
-    def set_rtl(para):
-        pPr = para._p.get_or_add_pPr()
-        bidi = OxmlElement('w:bidi')
-        pPr.append(bidi)
-        para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    def set_rtl(p):
+        pPr = p._p.get_or_add_pPr()
+        pPr.append(OxmlElement('w:bidi'))
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
-    def heading(text, level=1):
+    def h(text, level=1):
         p = doc.add_heading(text, level=level)
         set_rtl(p)
         for run in p.runs:
             run.font.name = "Arial"
-            run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x5F)
+            if level == 1:
+                run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x5F)
         return p
 
-    def para(text, bold=False):
-        p = doc.add_paragraph()
-        set_rtl(p)
-        run = p.add_run(text)
-        run.font.name = "Arial"
-        run.font.size = Pt(11)
-        run.bold = bold
-        return p
+    def p(text, bold=False):
+        par = doc.add_paragraph()
+        set_rtl(par)
+        run = par.add_run(str(text))
+        run.font.name = "Arial"; run.font.size = Pt(11); run.bold = bold
+        return par
 
-    heading(f"ניתוח מכרז: {r.get('title','')}", 1)
-    para(f"מפרסם: {r.get('publisher','')} | מועד הגשה: {r.get('deadline','')} | פרסום: {r.get('publish_date','')}")
+    h(f"ניתוח מכרז: {r.get('title','')}", 1)
+    p(f"מפרסם: {r.get('publisher','')}  |  מועד הגשה: {r.get('deadline','')}  |  פרסום: {r.get('publish_date','')}")
     doc.add_paragraph()
 
-    heading("ניתוח Claude", 2)
+    h("ניתוח", 2)
     for line in analysis.splitlines():
         if line.strip():
-            bold = line.strip().startswith("**") or line.strip().startswith("##")
-            clean = line.strip().replace("**","").replace("##","").replace("#","")
-            para(clean, bold=bold)
+            bold = line.strip().startswith("**") or line.strip().startswith("#")
+            clean = line.strip().replace("**","").replace("##","").replace("#","").strip()
+            p(clean, bold=bold)
+
+    if questions:
+        doc.add_paragraph()
+        h("שאלות הבהרה", 2)
+        for line in questions.splitlines():
+            if line.strip(): p(line.strip())
 
     doc.add_paragraph()
-    heading("פרופיל החברה (הקשר ששלחנו לקלוד)", 2)
-    import re
-    sp_match = re.search(r'SYSTEM_PROMPT\s*=\s*"""(.*?)"""', system_prompt, re.DOTALL)
-    sp_text = sp_match.group(1).strip() if sp_match else ""
-    for line in sp_text.splitlines():
-        if line.strip(): para(line.strip())
+    h("פרופיל החברה (הקשר שנשלח לקלוד)", 2)
+    for line in SYSTEM_PROMPT.splitlines():
+        if line.strip(): p(line.strip())
 
     if knowledge:
         doc.add_paragraph()
-        heading("הנחיות נלמדות (Knowledge)", 2)
-        for k in knowledge:
-            para(f"• {k}")
+        h("הנחיות נלמדות", 2)
+        for k in knowledge: p(f"• {k}")
 
     buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
-    filename = f"ניתוח_{r.get('tender_id','tender')}.docx"
-    return StreamingResponse(
-        buf,
+    doc.save(buf); buf.seek(0)
+    tid = r.get("tender_id", "tender")
+    return StreamingResponse(buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
-    )
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''%D7%A0%D7%99%D7%AA%D7%95%D7%97_{tid}.docx"})
 
 
 # ── Learning mode ─────────────────────────────────────────────────────────────
