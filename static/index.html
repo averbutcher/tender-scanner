@@ -425,11 +425,21 @@ async function initApp() {
   S.recruiterCfg = await GET('/api/recruiter/config');
   S.recruiterRecruiters = (S.recruiterCfg.recruiters || []).map(r => ({...r}));
   if ((S.user.apps || []).includes('recruiter_analysis')) {
-    S.recruiterData = await GET('/api/recruiter/data').catch(() => null);
-    if (S.recruiterData?.full_range) {
-      S.recruiterDateFrom = S.recruiterData.full_range.from;
-      S.recruiterDateTo = S.recruiterData.full_range.to;
+    const savedFrom = localStorage.getItem('recruiterDateFrom');
+    const savedTo   = localStorage.getItem('recruiterDateTo');
+    const params = new URLSearchParams();
+    if (savedFrom && savedTo) {
+      params.set('date_from', savedFrom);
+      params.set('date_to',   savedTo);
+    } else {
+      const today = new Date();
+      const week  = new Date(today); week.setDate(today.getDate() - 6);
+      params.set('date_from', week.toISOString().slice(0,10));
+      params.set('date_to',   today.toISOString().slice(0,10));
     }
+    S.recruiterDateFrom = params.get('date_from');
+    S.recruiterDateTo   = params.get('date_to');
+    S.recruiterData = await GET(`/api/recruiter/data?${params}`).catch(() => null);
     if (S.recruiterData?.recruiters?.length) S.recruiterSelected = S.recruiterData.recruiters[0].extension;
   }
   renderSidebar();
@@ -1108,8 +1118,12 @@ async function uploadRecruiterFile(file){
     const res=await api('POST','/api/recruiter/upload',fd,true);
     if(!res) return;
     toast(`✅ הועלו ${res.total_calls} שיחות!`);
-    S.recruiterDateFrom = null;
-    S.recruiterDateTo = null;
+    const today = new Date();
+    const week  = new Date(today); week.setDate(today.getDate() - 6);
+    S.recruiterDateFrom = week.toISOString().slice(0,10);
+    S.recruiterDateTo   = today.toISOString().slice(0,10);
+    localStorage.setItem('recruiterDateFrom', S.recruiterDateFrom);
+    localStorage.setItem('recruiterDateTo',   S.recruiterDateTo);
     await loadRecruiterData();
   }catch(e){ toast(`שגיאה: ${e.message}`,'error'); }
 }
@@ -1133,8 +1147,8 @@ async function loadRecruiterData(){
 function applyRecruiterDates(){
   const f=document.getElementById('rec-date-from')?.value;
   const t=document.getElementById('rec-date-to')?.value;
-  if(f) S.recruiterDateFrom=f;
-  if(t) S.recruiterDateTo=t;
+  if(f){ S.recruiterDateFrom=f; localStorage.setItem('recruiterDateFrom',f); }
+  if(t){ S.recruiterDateTo=t;   localStorage.setItem('recruiterDateTo',t); }
   loadRecruiterData();
 }
 
@@ -1157,7 +1171,7 @@ function renderRecruiterApp(){
         </label>
       </div>
     </div>
-    ${!d||!d.recruiters?.length ? '<div class="info">העלה קובץ Excel עם נתוני השיחות (גיליון "פיד") כדי להתחיל.</div>' : `
+    ${!d ? '<div class="info">העלה קובץ עם נתוני השיחות כדי להתחיל.</div>' : !d.recruiters?.length ? '<div class="info" style="text-align:center;padding:2rem">📅 אין נתונים לתאריכים שנבחרו — בחר טווח תאריכים אחר.</div>' : `
       ${d.full_range ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:.75rem 1rem;margin-bottom:1rem;font-size:.83rem">
         <div style="color:var(--muted);margin-bottom:.5rem">📅 טווח הנתונים שהועלו: <b>${d.full_range.from.slice(8)}/${d.full_range.from.slice(5,7)}/${d.full_range.from.slice(0,4)}</b> עד <b>${d.full_range.to.slice(8)}/${d.full_range.to.slice(5,7)}/${d.full_range.to.slice(0,4)}</b></div>
         <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
