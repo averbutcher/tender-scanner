@@ -950,6 +950,7 @@ async function generateQuestions(tid) {
     if (!res) return;
     const idx = S.history.findIndex(x => x.tender_id === tid);
     if (idx >= 0) S.history[idx].questions = res.questions;
+    await api('PATCH', `/api/history/${tid}`, {questions: res.questions});
     toast('✅ שאלות הבהרה נוצרו!');
     renderTenderApp();
   } catch(e) { toast(`שגיאה: ${e.message}`, 'error'); }

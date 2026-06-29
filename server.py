@@ -186,6 +186,17 @@ async def del_knowledge(idx: int, _: str = Depends(auth)):
 async def get_history(u: str = Depends(auth)):
     return _rj(_udir(u) / "history.json", [])
 
+@app.patch("/api/history/{tid}")
+async def patch_history(tid: str, body: dict, u: str = Depends(auth)):
+    path = _udir(u) / "history.json"
+    h = _rj(path, [])
+    for entry in h:
+        if entry.get("tender_id") == tid:
+            entry.update(body)
+            break
+    _wj(path, h)
+    return {"ok": True}
+
 @app.get("/api/last-scan")
 async def get_last_scan(u: str = Depends(auth)):
     return _rj(_udir(u) / "last_scan.json", [])
