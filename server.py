@@ -469,7 +469,7 @@ async def export_excel(body: dict, _: str = Depends(auth)):
     r = body
     analysis = r.get("analysis", "")
 
-    # Extract financial sections from analysis
+    # Split analysis into sections
     fin_keys = ["הערכת היקף כספי", "ערך שנתי", "בסיס לחישוב", "כוח אדם נדרש", "אורך חוזה", "המלצה", "אתגרים", "סיכונים"]
     sections: dict[str, list[str]] = {}
     current_key = None
@@ -488,58 +488,126 @@ async def export_excel(body: dict, _: str = Depends(auth)):
     ws.title = "ניתוח פיננסי"
     ws.sheet_view.rightToLeft = True
 
-    hfill  = PatternFill("solid", fgColor="1E3A5F")
-    sfill  = PatternFill("solid", fgColor="2563EB")
-    afill  = PatternFill("solid", fgColor="EEF3FA")
-    wfill  = PatternFill("solid", fgColor="FFFFFF")
-    thin   = Border(*[Side(style='thin', color='CCCCCC')]*0,
-                    left=Side(style='thin', color='CCCCCC'),
-                    right=Side(style='thin', color='CCCCCC'),
-                    top=Side(style='thin', color='CCCCCC'),
-                    bottom=Side(style='thin', color='CCCCCC'))
+    hfill = PatternFill("solid", fgColor="1E3A5F")
+    sfill = PatternFill("solid", fgColor="2563EB")
+    thfill= PatternFill("solid", fgColor="374151")
+    afill = PatternFill("solid", fgColor="EEF3FA")
+    wfill = PatternFill("solid", fgColor="FFFFFF")
+    thin  = Border(left=Side(style='thin',color='CCCCCC'), right=Side(style='thin',color='CCCCCC'),
+                   top=Side(style='thin',color='CCCCCC'),  bottom=Side(style='thin',color='CCCCCC'))
 
-    ws.column_dimensions['A'].width = 32
-    ws.column_dimensions['B'].width = 58
+    def is_md_table(line):
+        return line.startswith('|') and line.endswith('|')
 
-    def hrow(label, row, fill=None):
-        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+    def is_separator(line):
+        return re.fullmatch(r'[\|\-\s:]+', line) is not None
+
+    def parse_md_row(line):
+        return [c.strip() for c in line.strip('|').split('|')]
+
+    def style_cell(c, bold=False, fill=None, center=False):
+        c.font = Font(bold=bold, name="Arial", size=10)
+        if fill: c.fill = fill
+        c.border = thin
+        c.alignment = Alignment(horizontal="center" if center else "right",
+                                vertical="center", wrap_text=True)
+
+    def hrow(label, row, fill=None, ncols=2):
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=ncols)
         c = ws.cell(row, 1, label)
         c.font = Font(bold=True, color="FFFFFF", size=12, name="Arial")
         c.fill = fill or hfill
         c.alignment = Alignment(horizontal="right", vertical="center")
         ws.row_dimensions[row].height = 24
 
-    def drow(label, value, row, alt=False):
+    def drow(label, value, row, alt=False, ncols=2):
         fill = afill if alt else wfill
         c1 = ws.cell(row, 1, label or "")
-        c1.font = Font(bold=bool(label), name="Arial", size=10)
-        c1.fill = fill; c1.border = thin
-        c1.alignment = Alignment(horizontal="right", vertical="top", wrap_text=True)
-        c2 = ws.cell(row, 2, str(value) if value else "")
-        c2.font = Font(name="Arial", size=10)
-        c2.fill = fill; c2.border = thin
-        c2.alignment = Alignment(horizontal="right", vertical="top", wrap_text=True)
-        h = max(18, min(90, len(str(value or "")) // 3 + 15))
-        ws.row_dimensions[row].height = h
+        style_cell(c1, bold=bool(label), fill=fill)
+        if ncols == 2:
+            c2 = ws.cell(row, 2, str(value) if value else "")
+            style_cell(c2, fill=fill)
+            ws.row_dimensions[row].height = max(18, min(90, len(str(value or ""))//3+15))
+        else:
+            ws.row_dimensions[row].height = 18
+
+    def write_section_lines(lines, start_row, max_cols):
+        r = start_row
+        alt = False
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if is_md_table(line):
+                # collect table block
+                tbl_lines = []
+                while i < len(lines) and (is_md_table(lines[i]) or is_separator(lines[i])):
+                    tbl_lines.append(lines[i]); i += 1
+                data_rows = [parse_md_row(l) for l in tbl_lines if not is_separator(l)]
+                if not data_rows: continue
+                ncols = max(len(row) for row in data_rows)
+                # set/extend column widths
+                for ci in range(1, ncols+1):
+                    col_letter = ws.cell(r, ci).column_letter
+                    ws.column_dimensions[col_letter].width = max(
+                        ws.column_dimensions[col_letter].width, 18)
+                for ri, dr in enumerate(data_rows):
+                    is_hdr = ri == 0
+                    row_fill = thfill if is_hdr else (afill if ri%2==0 else wfill)
+                    for ci, val in enumerate(dr):
+                        c = ws.cell(r, ci+1, val)
+                        style_cell(c, bold=is_hdr, fill=row_fill,
+                                   center=(ci < len(dr)-1))
+                        if is_hdr: c.font = Font(bold=True, color="FFFFFF", name="Arial", size=10)
+                    ws.row_dimensions[r].height = 20
+                    r += 1
+            else:
+                clean = line.replace("**","").replace("#","").strip()
+                if clean and not is_separator(clean):
+                    c = ws.cell(r, 1, clean)
+                    style_cell(c, fill=(afill if alt else wfill))
+                    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=max_cols)
+                    ws.row_dimensions[r].height = max(18, min(60, len(clean)//5+15))
+                    alt = not alt
+                    r += 1
+                i += 1
+        return r
+
+    # Auto-detect column count from tables in analysis
+    max_cols = 2
+    for line in analysis.splitlines():
+        if is_md_table(line.strip()):
+            max_cols = max(max_cols, line.count('|') - 1)
+    max_cols = min(max_cols, 8)
+    for ci in range(1, max_cols+1):
+        letter = ws.cell(1, ci).column_letter
+        ws.column_dimensions[letter].width = 20
+    ws.column_dimensions[ws.cell(1,1).column_letter].width = 30
 
     row = 1
-    hrow(f"ניתוח פיננסי: {r.get('title','')}", row); row += 1
-    drow("מפרסם",       r.get("publisher",""),    row, False); row += 1
-    drow("מועד הגשה",   r.get("deadline",""),     row, True);  row += 1
-    drow("תאריך פרסום", r.get("publish_date",""), row, False); row += 1
+    hrow(f"ניתוח פיננסי: {r.get('title','')}", row, ncols=max_cols); row += 1
+    for label, val, alt in [
+        ("מפרסם", r.get("publisher",""), False),
+        ("מועד הגשה", r.get("deadline",""), True),
+        ("תאריך פרסום", r.get("publish_date",""), False),
+    ]:
+        drow(label, val, row, alt, ncols=max_cols); row += 1
     row += 1
 
-    # Financial sections
     finance_order = ["הערכת היקף כספי", "ערך שנתי", "בסיס לחישוב", "כוח אדם נדרש", "אורך חוזה", "המלצה", "אתגרים", "סיכונים"]
-    hrow("ניתוח פיננסי מפורט", row, sfill); row += 1
+    hrow("ניתוח פיננסי מפורט", row, sfill, ncols=max_cols); row += 1
     shown = set()
     for key in finance_order:
         lines = sections.get(key)
-        if not lines: continue
-        if key in shown: continue
+        if not lines or key in shown: continue
         shown.add(key)
-        text = "\n".join(l for l in lines if l.strip())
-        drow(key, text, row, len(shown) % 2 == 0); row += 1
+        # Section sub-header
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=max_cols)
+        c = ws.cell(row, 1, key)
+        c.font = Font(bold=True, color="FFFFFF", name="Arial", size=10)
+        c.fill = PatternFill("solid", fgColor="2B5C9E")
+        c.alignment = Alignment(horizontal="right", vertical="center")
+        ws.row_dimensions[row].height = 20; row += 1
+        row = write_section_lines(lines[1:], row, max_cols)  # skip key header line
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
