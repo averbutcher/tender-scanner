@@ -424,9 +424,21 @@ async def generate_questions(body: dict, _: str = Depends(auth)):
 מועד הגשה: {r.get('deadline','')}
 ניתוח: {r.get('analysis','')}
 
-צור רשימה של 8-12 שאלות הבהרה שיש לשלוח למפרסם המכרז.
-השאלות צריכות להיות ממוקדות, מעשיות, ולסייע לחברה להבין טוב יותר את דרישות המכרז לפני הגשת הצעה.
-כתוב כל שאלה בשורה נפרדת, מספר כל שאלה. בעברית בלבד."""
+צור רשימה של 10-12 שאלות הבהרה שיש לשלוח למפרסם המכרז.
+השאלות צריכות להיות ממוקדות ומעשיות.
+
+פלט כל שאלה בפורמט הבא (עמודה מופרדת ב-|):
+מספר|עמוד|סעיף|שאלה
+
+- עמוד: מספר עמוד רלוונטי במסמך אם ידוע, אחרת: כללי
+- סעיף: מספר סעיף רלוונטי אם ידוע, אחרת: כללי
+- שאלה: טקסט השאלה בעברית
+
+דוגמה:
+1|כללי|כללי|האם נדרש רישיון עסק?
+2|5|3.2|מה תקופת האחריות על הציוד?
+
+כתוב את כל השאלות בפורמט זה בלבד, ללא כותרות נוספות."""
 
     system = SYSTEM_PROMPT
     if knowledge:
@@ -437,7 +449,7 @@ async def generate_questions(body: dict, _: str = Depends(auth)):
         resp = await loop.run_in_executor(
             None,
             lambda: client.messages.create(
-                model="claude-sonnet-4-6", max_tokens=1024, system=system,
+                model="claude-sonnet-4-6", max_tokens=2048, system=system,
                 messages=[{"role": "user", "content": prompt}]
             )
         )
@@ -609,6 +621,105 @@ async def export_word(body: dict, _: str = Depends(auth)):
     return StreamingResponse(buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''%D7%A0%D7%99%D7%AA%D7%95%D7%97_{tid}.docx"})
+
+
+# ── Export questions to Word (table) ──────────────────────────────────────────
+
+@app.post("/api/tender/export-questions-word")
+async def export_questions_word(body: dict, _: str = Depends(auth)):
+    import io
+    from docx import Document
+    from docx.shared import Pt, RGBColor, Cm
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    r = body
+    questions_raw = r.get("questions", "")
+
+    doc = Document()
+    sectPr = doc.sections[0]._sectPr
+    sectPr.append(OxmlElement('w:bidi'))
+
+    def set_rtl(p):
+        pPr = p._p.get_or_add_pPr()
+        pPr.append(OxmlElement('w:bidi'))
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+    title_p = doc.add_heading(f"שאלות הבהרה: {r.get('title','')}", 1)
+    set_rtl(title_p)
+    for run in title_p.runs:
+        run.font.name = "Arial"
+        run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x5F)
+
+    meta = doc.add_paragraph()
+    set_rtl(meta)
+    run = meta.add_run(f"מפרסם: {r.get('publisher','')}  |  מועד הגשה: {r.get('deadline','')}")
+    run.font.name = "Arial"; run.font.size = Pt(11)
+    doc.add_paragraph()
+
+    # Parse pipe-separated questions
+    rows = []
+    for line in questions_raw.strip().splitlines():
+        line = line.strip()
+        if not line: continue
+        parts = line.split("|")
+        if len(parts) >= 4:
+            rows.append((parts[0].strip(), parts[1].strip(), parts[2].strip(), "|".join(parts[3:]).strip()))
+        elif line:
+            # fallback: unparseable line, treat as plain question
+            num = str(len(rows)+1)
+            rows.append((num, "כללי", "כללי", line.lstrip("0123456789. ")))
+
+    headers = ["מספר", "עמוד", "סעיף", "שאלה"]
+    col_widths = [Cm(1.5), Cm(2), Cm(2.5), Cm(11)]
+
+    table = doc.add_table(rows=1+len(rows), cols=4)
+    table.style = "Table Grid"
+
+    # Header row
+    hdr = table.rows[0]
+    for i, (h_text, w) in enumerate(zip(headers, col_widths)):
+        cell = hdr.cells[i]
+        cell.width = w
+        cell.paragraphs[0].clear()
+        run = cell.paragraphs[0].add_run(h_text)
+        run.font.bold = True; run.font.name = "Arial"; run.font.size = Pt(11)
+        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        tc = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        shd = OxmlElement('w:shd')
+        shd.set(qn('w:fill'), '1E3A5F')
+        shd.set(qn('w:color'), 'auto')
+        shd.set(qn('w:val'), 'clear')
+        tcPr.append(shd)
+
+    # Data rows
+    for ri, (num, page, section, question) in enumerate(rows):
+        row_cells = table.rows[ri+1].cells
+        fill_color = 'EEF3FA' if ri % 2 == 0 else 'FFFFFF'
+        for ci, text in enumerate([num, page, section, question]):
+            cell = row_cells[ci]
+            cell.paragraphs[0].clear()
+            run = cell.paragraphs[0].add_run(text)
+            run.font.name = "Arial"; run.font.size = Pt(10)
+            align = WD_ALIGN_PARAGRAPH.CENTER if ci < 3 else WD_ALIGN_PARAGRAPH.RIGHT
+            cell.paragraphs[0].alignment = align
+            tc = cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            shd = OxmlElement('w:shd')
+            shd.set(qn('w:fill'), fill_color)
+            shd.set(qn('w:color'), 'auto')
+            shd.set(qn('w:val'), 'clear')
+            tcPr.append(shd)
+
+    buf = io.BytesIO()
+    doc.save(buf); buf.seek(0)
+    tid = r.get("tender_id", "tender")
+    return StreamingResponse(buf,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''%D7%A9%D7%90%D7%9C%D7%95%D7%AA_{tid}.docx"})
 
 
 # ── Learning mode ─────────────────────────────────────────────────────────────

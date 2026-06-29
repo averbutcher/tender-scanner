@@ -937,7 +937,7 @@ function favActions(r) {
     <button class="btn btn-outline btn-sm" onclick="exportTenderWord('${tid}')">📝 ייצא לוורד</button>
     ${hasQ ? `<button class="btn btn-outline btn-sm" onclick="exportQuestionsWord('${tid}')">📋 ייצא שאלות לוורד</button>` : ''}
   </div>
-  ${hasQ ? `<div style="background:var(--bg2);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius) var(--radius);padding:.75rem 1rem 1rem;margin-bottom:1rem;white-space:pre-wrap;font-size:.83rem;direction:rtl">${esc(r.questions)}</div>` : '<div style="margin-bottom:1rem"></div>'}`;
+  ${hasQ ? `<div style="background:var(--bg2);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius) var(--radius);padding:.75rem 1rem 1rem;margin-bottom:1rem;direction:rtl;overflow-x:auto">${renderQuestionsTable(r.questions)}</div>` : '<div style="margin-bottom:1rem"></div>'}`;
 }
 
 async function generateQuestions(tid) {
@@ -955,14 +955,43 @@ async function generateQuestions(tid) {
   } catch(e) { toast(`שגיאה: ${e.message}`, 'error'); }
 }
 
+function renderQuestionsTable(raw) {
+  const rows = [];
+  for (const line of raw.trim().split('\n')) {
+    const t = line.trim(); if (!t) continue;
+    const parts = t.split('|');
+    if (parts.length >= 4) {
+      rows.push([parts[0].trim(), parts[1].trim(), parts[2].trim(), parts.slice(3).join('|').trim()]);
+    } else {
+      rows.push([String(rows.length+1), 'כללי', 'כללי', t.replace(/^\d+\.\s*/,'')]);
+    }
+  }
+  if (!rows.length) return `<pre style="font-size:.83rem">${esc(raw)}</pre>`;
+  return `<table class="rec-table" style="width:100%;font-size:.82rem">
+    <thead><tr>
+      <th style="width:3rem;text-align:center">מספר</th>
+      <th style="width:5rem;text-align:center">עמוד</th>
+      <th style="width:6rem;text-align:center">סעיף</th>
+      <th>שאלה</th>
+    </tr></thead>
+    <tbody>${rows.map(([n,pg,sec,q],i)=>`
+      <tr style="background:${i%2===0?'var(--bg2)':'var(--bg)'}">
+        <td style="text-align:center">${esc(n)}</td>
+        <td style="text-align:center">${esc(pg)}</td>
+        <td style="text-align:center">${esc(sec)}</td>
+        <td>${esc(q)}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
 async function exportQuestionsWord(tid) {
   const r = S.history.find(x => x.tender_id === tid);
   if (!r?.questions) return;
   try {
-    const resp = await fetch('/api/tender/export-word', {
+    const resp = await fetch('/api/tender/export-questions-word', {
       method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({...r, export_questions_only: true})
+      body: JSON.stringify(r)
     });
     if (!resp.ok) throw new Error(await resp.text());
     const blob = await resp.blob();
