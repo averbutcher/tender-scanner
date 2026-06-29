@@ -538,12 +538,9 @@ async def export_excel(body: dict, _: str = Depends(auth)):
         fill = afill if alt else wfill
         c1 = ws.cell(row, 1, label or "")
         style_cell(c1, bold=bool(label), fill=fill)
-        if ncols == 2:
-            c2 = ws.cell(row, 2, str(value) if value else "")
-            style_cell(c2, fill=fill)
-            ws.row_dimensions[row].height = max(18, min(90, len(str(value or ""))//3+15))
-        else:
-            ws.row_dimensions[row].height = 18
+        c2 = ws.cell(row, 2, str(value) if value else "")
+        style_cell(c2, fill=fill)
+        ws.row_dimensions[row].height = max(18, min(90, len(str(value or ""))//3+15))
 
     def write_section_lines(lines, start_row, max_cols):
         r = start_row
