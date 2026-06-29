@@ -70,7 +70,7 @@ def analyze_tender(tender: Tender, settings: dict, client: anthropic.Anthropic,
     try:
         message = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=2048,
+            max_tokens=4096,
             system=_build_system(knowledge, session_feedback),
             messages=[{"role": "user", "content": prompt}],
         )
