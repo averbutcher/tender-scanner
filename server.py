@@ -773,9 +773,10 @@ async def export_questions_word(body: dict, _: str = Depends(auth)):
             num = str(len(rows)+1)
             rows.append((num, "כללי", "כללי", line.lstrip("0123456789. ")))
 
-    # RTL: reverse column order so it reads right-to-left (שאלה | סעיף | עמוד | מספר)
-    headers_rtl  = ["שאלה", "סעיף", "עמוד", "מספר"]
-    col_widths_rtl = [Cm(11), Cm(2.5), Cm(2), Cm(1.5)]
+    # Column order as written in file — RTL doc renders col1 on the right
+    # so מספר(col1) | עמוד(col2) | סעיף(col3) | שאלה(col4) displays correctly R→L
+    headers_rtl  = ["מספר", "עמוד", "סעיף", "שאלה"]
+    col_widths_rtl = [Cm(1.5), Cm(2), Cm(2.5), Cm(11)]
 
     def add_shd(tc, color):
         tcPr = tc.get_or_add_tcPr()
@@ -798,9 +799,6 @@ async def export_questions_word(body: dict, _: str = Depends(auth)):
 
     table = doc.add_table(rows=1+len(rows), cols=4)
     table.style = "Table Grid"
-    # Set table RTL
-    tblPr = table._tbl.tblPr
-    bidiVisual = OxmlElement('w:bidiVisual'); bidiVisual.set(qn('w:val'),'1'); tblPr.append(bidiVisual)
 
     # Header row
     hdr = table.rows[0]
@@ -809,11 +807,11 @@ async def export_questions_word(body: dict, _: str = Depends(auth)):
         add_shd(cell._tc, '1E3A5F')
         cell_rtl_run(cell, h_text, bold=True, size=11, color=RGBColor(0xFF,0xFF,0xFF))
 
-    # Data rows — reversed: question first, then section, page, number
+    # Data rows
     for ri, (num, page, section, question) in enumerate(rows):
         row_cells = table.rows[ri+1].cells
         fill_color = 'EEF3FA' if ri % 2 == 0 else 'FFFFFF'
-        for ci, text in enumerate([question, section, page, num]):
+        for ci, text in enumerate([num, page, section, question]):
             cell = row_cells[ci]
             add_shd(cell._tc, fill_color)
             cell_rtl_run(cell, text, size=10)
