@@ -518,7 +518,7 @@ async def export_excel(body: dict, _: str = Depends(auth)):
 
     def rtl_align(horizontal="right", center=False):
         return Alignment(horizontal="center" if center else horizontal,
-                         vertical="center", wrap_text=True, reading_order=2)
+                         vertical="center", wrap_text=True)
 
     def style_cell(c, bold=False, fill=None, center=False):
         c.font = Font(bold=bold, name="Arial", size=10)
