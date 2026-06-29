@@ -516,19 +516,22 @@ async def export_excel(body: dict, _: str = Depends(auth)):
     def parse_md_row(line):
         return [c.strip() for c in line.strip('|').split('|')]
 
+    def rtl_align(horizontal="right", center=False):
+        return Alignment(horizontal="center" if center else horizontal,
+                         vertical="center", wrap_text=True, reading_order=2)
+
     def style_cell(c, bold=False, fill=None, center=False):
         c.font = Font(bold=bold, name="Arial", size=10)
         if fill: c.fill = fill
         c.border = thin
-        c.alignment = Alignment(horizontal="center" if center else "right",
-                                vertical="center", wrap_text=True)
+        c.alignment = rtl_align(center=center)
 
     def hrow(label, row, fill=None, ncols=2):
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=ncols)
         c = ws.cell(row, 1, label)
         c.font = Font(bold=True, color="FFFFFF", size=12, name="Arial")
         c.fill = fill or hfill
-        c.alignment = Alignment(horizontal="right", vertical="center")
+        c.alignment = rtl_align()
         ws.row_dimensions[row].height = 24
 
     def drow(label, value, row, alt=False, ncols=2):
@@ -650,21 +653,22 @@ async def export_word(body: dict, _: str = Depends(auth)):
     sectPr.append(OxmlElement('w:bidi'))
 
     def set_rtl_para(par):
+        par.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         pPr = par._p.get_or_add_pPr()
         b = OxmlElement('w:bidi'); b.set(qn('w:val'), '1'); pPr.append(b)
         jc = OxmlElement('w:jc');  jc.set(qn('w:val'), 'right'); pPr.append(jc)
 
     def set_rtl_run(run):
+        run.font.cs_name = "Arial"
         rPr = run._r.get_or_add_rPr()
         rtl = OxmlElement('w:rtl'); rtl.set(qn('w:val'), '1'); rPr.append(rtl)
-        cs  = OxmlElement('w:cs');  rPr.append(cs)
+        rPr.append(OxmlElement('w:cs'))
 
     def h(text, level=1):
         par = doc.add_heading(text, level=level)
         set_rtl_para(par)
         for run in par.runs:
             run.font.name = "Arial"
-            run.font.cs_name = "Arial"
             set_rtl_run(run)
             if level == 1:
                 run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x5F)
@@ -766,52 +770,53 @@ async def export_questions_word(body: dict, _: str = Depends(auth)):
         if len(parts) >= 4:
             rows.append((parts[0].strip(), parts[1].strip(), parts[2].strip(), "|".join(parts[3:]).strip()))
         elif line:
-            # fallback: unparseable line, treat as plain question
             num = str(len(rows)+1)
             rows.append((num, "כללי", "כללי", line.lstrip("0123456789. ")))
 
-    headers = ["מספר", "עמוד", "סעיף", "שאלה"]
-    col_widths = [Cm(1.5), Cm(2), Cm(2.5), Cm(11)]
+    # RTL: reverse column order so it reads right-to-left (שאלה | סעיף | עמוד | מספר)
+    headers_rtl  = ["שאלה", "סעיף", "עמוד", "מספר"]
+    col_widths_rtl = [Cm(11), Cm(2.5), Cm(2), Cm(1.5)]
+
+    def add_shd(tc, color):
+        tcPr = tc.get_or_add_tcPr()
+        shd = OxmlElement('w:shd')
+        shd.set(qn('w:fill'), color); shd.set(qn('w:color'), 'auto'); shd.set(qn('w:val'), 'clear')
+        tcPr.append(shd)
+
+    def cell_rtl_run(cell, text, bold=False, size=10, color=None):
+        p = cell.paragraphs[0]; p.clear()
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        pPr = p._p.get_or_add_pPr()
+        b = OxmlElement('w:bidi'); b.set(qn('w:val'),'1'); pPr.append(b)
+        jc = OxmlElement('w:jc'); jc.set(qn('w:val'),'right'); pPr.append(jc)
+        run = p.add_run(text)
+        run.font.name = "Arial"; run.font.cs_name = "Arial"; run.font.size = Pt(size); run.bold = bold
+        if color: run.font.color.rgb = color
+        rPr = run._r.get_or_add_rPr()
+        rtl = OxmlElement('w:rtl'); rtl.set(qn('w:val'),'1'); rPr.append(rtl)
+        rPr.append(OxmlElement('w:cs'))
 
     table = doc.add_table(rows=1+len(rows), cols=4)
     table.style = "Table Grid"
+    # Set table RTL
+    tblPr = table._tbl.tblPr
+    bidiVisual = OxmlElement('w:bidiVisual'); bidiVisual.set(qn('w:val'),'1'); tblPr.append(bidiVisual)
 
     # Header row
     hdr = table.rows[0]
-    for i, (h_text, w) in enumerate(zip(headers, col_widths)):
-        cell = hdr.cells[i]
-        cell.width = w
-        cell.paragraphs[0].clear()
-        run = cell.paragraphs[0].add_run(h_text)
-        run.font.bold = True; run.font.name = "Arial"; run.font.size = Pt(11)
-        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-        cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        tc = cell._tc
-        tcPr = tc.get_or_add_tcPr()
-        shd = OxmlElement('w:shd')
-        shd.set(qn('w:fill'), '1E3A5F')
-        shd.set(qn('w:color'), 'auto')
-        shd.set(qn('w:val'), 'clear')
-        tcPr.append(shd)
+    for i, (h_text, w) in enumerate(zip(headers_rtl, col_widths_rtl)):
+        cell = hdr.cells[i]; cell.width = w
+        add_shd(cell._tc, '1E3A5F')
+        cell_rtl_run(cell, h_text, bold=True, size=11, color=RGBColor(0xFF,0xFF,0xFF))
 
-    # Data rows
+    # Data rows — reversed: question first, then section, page, number
     for ri, (num, page, section, question) in enumerate(rows):
         row_cells = table.rows[ri+1].cells
         fill_color = 'EEF3FA' if ri % 2 == 0 else 'FFFFFF'
-        for ci, text in enumerate([num, page, section, question]):
+        for ci, text in enumerate([question, section, page, num]):
             cell = row_cells[ci]
-            cell.paragraphs[0].clear()
-            run = cell.paragraphs[0].add_run(text)
-            run.font.name = "Arial"; run.font.size = Pt(10)
-            align = WD_ALIGN_PARAGRAPH.CENTER if ci < 3 else WD_ALIGN_PARAGRAPH.RIGHT
-            cell.paragraphs[0].alignment = align
-            tc = cell._tc
-            tcPr = tc.get_or_add_tcPr()
-            shd = OxmlElement('w:shd')
-            shd.set(qn('w:fill'), fill_color)
-            shd.set(qn('w:color'), 'auto')
-            shd.set(qn('w:val'), 'clear')
-            tcPr.append(shd)
+            add_shd(cell._tc, fill_color)
+            cell_rtl_run(cell, text, size=10)
 
     buf = io.BytesIO()
     doc.save(buf); buf.seek(0)
