@@ -1045,6 +1045,9 @@ async def send_email_digest(body: dict, u: str = Depends(auth)):
             headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(req, timeout=15) as resp:
             return {"ok": True, "count": len(filtered)}
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        return {"ok": False, "msg": f"HTTP {e.code}: {body}"}
     except Exception as e:
         import traceback
         return {"ok": False, "msg": traceback.format_exc()[-600:]}
