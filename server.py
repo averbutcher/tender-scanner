@@ -261,7 +261,7 @@ async def scan(u: str = Depends(auth), skip_seen: bool = Query(True)):
         yield f"data: {json.dumps({'type':'count','total':len(tender_list),'new':len(new)})}\n\n"
 
         if not new:
-            yield f"data: {json.dumps({'type':'complete','count':0})}\n\n"
+            yield f"data: {json.dumps({'type':'complete','count':0,'total':len(tender_list)})}\n\n"
             return
 
         results = []
@@ -309,7 +309,7 @@ async def scan(u: str = Depends(auth), skip_seen: bool = Query(True)):
 
             yield f"data: {json.dumps({'type':'result','data':result,'pct':(i+1)/len(new)})}\n\n"
 
-        yield f"data: {json.dumps({'type':'complete','count':len(results)})}\n\n"
+        yield f"data: {json.dumps({'type':'complete','count':len(results),'total':len(tender_list)})}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                               headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

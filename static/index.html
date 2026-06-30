@@ -752,8 +752,14 @@ function startScan() {
     } else if (d.type === 'complete') {
       evtSrc.close();
       S.scanRunning = false;
-      if (statusEl) statusEl.textContent = `✅ הסריקה הושלמה — ${d.count} מכרזים נותחו`;
       if (barEl) barEl.style.width = '100%';
+      if (d.count === 0 && d.total === 0) {
+        toast('הסריקה הושלמה — לא נמצאו מכרזים חדשים באתר', 'success');
+      } else if (d.count === 0) {
+        toast(`נמצאו ${d.total} מכרזים — כולם כבר נותחו בעבר. בטל "דלג על מכרזים שנותחו" כדי לנתח מחדש.`, 'success');
+      } else {
+        toast(`✅ הסריקה הושלמה — ${d.count} מכרזים חדשים נותחו`, 'success');
+      }
       renderTenderApp();
       renderScanFilterBar();
     } else if (d.type === 'error') {
