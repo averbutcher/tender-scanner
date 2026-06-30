@@ -733,9 +733,13 @@ async function sendEmailDigest() {
   const tenders = [...S.scanResults, ...S.history];
   if (!tenders.length) { toast('אין מכרזים לשליחה', 'error'); return; }
   toast('שולח מייל...', 'success');
-  const res = await api('POST', '/api/send-email', { tenders, min_level: level, to });
-  if (res?.ok) toast(`✅ נשלח! ${res.count} מכרזים במייל`, 'success');
-  else toast(`שגיאה: ${res?.msg || 'לא ידוע'}`, 'error');
+  try {
+    const res = await api('POST', '/api/send-email', { tenders, min_level: level, to });
+    if (res?.ok) toast(`✅ נשלח! ${res.count} מכרזים במייל`, 'success');
+    else toast(`שגיאה: ${res?.msg || 'תשובה לא ידועה'}`, 'error');
+  } catch(e) {
+    toast(`שגיאה: ${e.message}`, 'error');
+  }
 }
 
 function startScan() {
