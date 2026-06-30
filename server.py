@@ -1033,34 +1033,23 @@ async def send_email_digest(body: dict, u: str = Depends(auth)):
       <p style="font-family:Arial,sans-serif;font-size:12px;color:#999;text-align:center;margin-top:30px">Electra Target Tools</p>
     </body></html>"""
 
-    app_pw = os.environ.get("GMAIL_APP_PASSWORD","")
-    if not app_pw:
-        return {"ok": False, "msg": "GMAIL_APP_PASSWORD לא מוגדר בסביבה"}
+    resend_key = os.environ.get("RESEND_API_KEY","")
+    if not resend_key:
+        return {"ok": False, "msg": "RESEND_API_KEY לא מוגדר בסביבה"}
 
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-    import smtplib
-
-    sender = "daniel.averbuch123@gmail.com"
-    subject   = f"[Electra Target] {len(filtered)} מכרזים — {run_date}"
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = sender
-    msg["To"]      = recipient
-    msg.attach(MIMEText(html, "html", "utf-8"))
-
+    import requests
+    subject = f"[Electra Target] {len(filtered)} מכרזים — {run_date}"
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(sender, app_pw)
-            server.sendmail(sender, [recipient], msg.as_string())
-        return {"ok": True, "count": len(filtered)}
+        r = requests.post("https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+            json={"from": "Electra Target <onboarding@resend.dev>", "to": [recipient], "subject": subject, "html": html},
+            timeout=15)
+        if r.status_code == 200 or r.status_code == 201:
+            return {"ok": True, "count": len(filtered)}
+        return {"ok": False, "msg": r.text}
     except Exception as e:
         import traceback
-        return {"ok": False, "msg": traceback.format_exc()[-800:] or repr(e) or type(e).__name__}
+        return {"ok": False, "msg": traceback.format_exc()[-600:]}
 
 
 # ── Learning mode ─────────────────────────────────────────────────────────────
