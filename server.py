@@ -218,6 +218,17 @@ async def toggle_fav(tid: str, u: str = Depends(auth)):
 
 # ── Scan (SSE) ────────────────────────────────────────────────────────────────
 
+@app.get("/api/scan-test")
+async def scan_test(u: str = Depends(auth)):
+    import traceback
+    try:
+        settings = _load_settings()
+        from scraper import fetch_tender_list
+        results = await asyncio.wait_for(fetch_tender_list(settings), timeout=60)
+        return {"ok": True, "count": len(results), "sample": [r["title"] for r in results[:3]]}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "trace": traceback.format_exc()[-1000:]}
+
 @app.get("/api/scan")
 async def scan(u: str = Depends(auth), skip_seen: bool = Query(True)):
     settings = _load_settings()
