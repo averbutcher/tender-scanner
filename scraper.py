@@ -101,6 +101,12 @@ async def fetch_tender_list(settings: dict) -> list[dict]:
                 pub_date = await _card_publish_date(item)
                 title_el = await item.query_selector("h2.search-results-content-head")
                 title = (await title_el.inner_text()).strip() if title_el else (await link_el.inner_text()).strip()
+
+                # Skip non-tender items (exemption notices, catalog products, etc.)
+                SKIP_KEYWORDS = ["הודעת פטור", "פטור ממכרז", "הודעה על כוונה", "רכש מרוכז"]
+                if any(kw in title for kw in SKIP_KEYWORDS):
+                    continue
+
                 tender_id = _extract_id_from_url(href)
                 if tender_id and href:
                     results.append({
