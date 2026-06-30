@@ -946,6 +946,120 @@ async def export_questions_word(body: dict, _: str = Depends(auth)):
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''%D7%A9%D7%90%D7%9C%D7%95%D7%AA_{tid}.docx"})
 
 
+# ── Email digest ──────────────────────────────────────────────────────────────
+
+@app.post("/api/send-email")
+async def send_email_digest(body: dict, u: str = Depends(auth)):
+    from emailer import send_digest, build_html_digest
+    from datetime import date
+    import re
+
+    tenders   = body.get("tenders", [])   # list of tender result dicts
+    min_level = body.get("min_level", "high")  # "high", "medium", "low"
+
+    level_rank = {"high": 0, "medium": 1, "low": 2}
+    threshold  = level_rank.get(min_level, 0)
+
+    def get_rank(analysis):
+        if "גבוהה" in analysis: return 0
+        if "בינונית" in analysis: return 1
+        return 2
+
+    def extract_summary(analysis: str) -> str:
+        """Extract the first סיכום section from analysis."""
+        lines = analysis.splitlines()
+        in_section = False
+        result = []
+        for line in lines:
+            if re.search(r'סיכום', line):
+                in_section = True
+                continue
+            if in_section:
+                if re.match(r'^#{1,3}\s', line) and result:
+                    break
+                if line.strip():
+                    result.append(line.strip().replace('**','').replace('#',''))
+        return ' '.join(result[:5]) if result else analysis[:300]
+
+    filtered = [t for t in tenders if get_rank(t.get("analysis","")) <= threshold]
+    if not filtered:
+        return {"ok": False, "msg": "לא נמצאו מכרזים ברמה שנבחרה"}
+
+    app_url = "https://tender-scanner.up.railway.app"
+    def badge(a):
+        if "גבוהה" in a: return "🟢 גבוהה"
+        if "בינונית" in a: return "🟡 בינונית"
+        return "🔴 נמוכה"
+    def badge_color(a):
+        if "גבוהה" in a: return "#1a7a1a"
+        if "בינונית" in a: return "#b36b00"
+        return "#8b0000"
+
+    cards = []
+    for t in filtered:
+        analysis = t.get("analysis","")
+        summary  = extract_summary(analysis)
+        color    = badge_color(analysis)
+        cards.append(f"""
+        <div style="border:1px solid #ddd;border-radius:8px;padding:16px;margin-bottom:20px;font-family:Arial,sans-serif;direction:rtl;text-align:right;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <h2 style="margin:0;font-size:16px;color:{color}">{t.get('title','')}</h2>
+            <span style="background:{color};color:#fff;padding:3px 10px;border-radius:12px;font-size:12px;white-space:nowrap">{badge(analysis)}</span>
+          </div>
+          <p style="margin:4px 0;color:#555;font-size:13px">
+            {t.get('publisher','') or ''}
+            {' | פרסום: '+t['publish_date'] if t.get('publish_date') else ''}
+            {' | הגשה: '+t['deadline'] if t.get('deadline') else ''}
+          </p>
+          <hr style="border:none;border-top:1px solid #eee;margin:10px 0">
+          <p style="font-size:14px;line-height:1.7;margin:0 0 12px">{summary}</p>
+          <div style="display:flex;gap:12px">
+            <a href="{t.get('url','')}" style="color:#2563EB;font-size:13px">🔗 עמוד המכרז</a>
+            <a href="{app_url}" style="color:#2563EB;font-size:13px">📊 ניתוח מלא במערכת</a>
+          </div>
+        </div>""")
+
+    run_date = date.today().strftime("%d/%m/%Y")
+    level_label = {"high":"גבוהה בלבד","medium":"בינונית וגבוהה","low":"כל הרמות"}.get(min_level,"")
+    html = f"""<html><body style="background:#f5f5f5;padding:20px">
+      <h1 style="font-family:Arial,sans-serif;direction:rtl;text-align:right;color:#1a1a2e">
+        סריקת מכרזים — {run_date}
+      </h1>
+      <p style="font-family:Arial,sans-serif;direction:rtl;text-align:right;color:#555">
+        {len(filtered)} מכרזים ברמה: {level_label}
+      </p>
+      {''.join(cards)}
+      <p style="font-family:Arial,sans-serif;font-size:12px;color:#999;text-align:center;margin-top:30px">Electra Target Tools</p>
+    </body></html>"""
+
+    settings   = _load_settings()
+    app_pw     = os.environ.get("GMAIL_APP_PASSWORD","")
+    if not app_pw:
+        return {"ok": False, "msg": "GMAIL_APP_PASSWORD לא מוגדר בסביבה"}
+
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    import smtplib
+
+    sender    = settings["email"]["sender"]
+    recipient = settings["email"]["recipient"]
+    subject   = f"[Electra Target] {len(filtered)} מכרזים — {run_date}"
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"]    = sender
+    msg["To"]      = recipient
+    msg.attach(MIMEText(html, "html", "utf-8"))
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, app_pw)
+            server.sendmail(sender, [recipient], msg.as_string())
+        return {"ok": True, "count": len(filtered)}
+    except Exception as e:
+        return {"ok": False, "msg": str(e)}
+
+
 # ── Learning mode ─────────────────────────────────────────────────────────────
 
 @app.post("/api/learn/analyze")

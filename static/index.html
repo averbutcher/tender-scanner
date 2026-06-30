@@ -699,18 +699,36 @@ function renderScanTab(el) {
     <div style="color:var(--muted);font-size:.83rem;margin-bottom:1rem">
       סורק מ-<b>${days}</b> הימים האחרונים | עד <b>${max}</b> מכרזים לריצה
     </div>
-    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem">
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
       <button class="btn btn-primary" id="scan-btn" onclick="startScan()" ${S.scanRunning?'disabled':''}>
         ${S.scanRunning ? '⏳ סורק...' : '▶ הפעל סריקה'}
       </button>
       <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer">
         <input type="checkbox" id="skip-seen" ${!S.scanRunning?'':'disabled'} ${S.skipSeen!==false?'checked':''} onchange="S.skipSeen=this.checked"> דלג על שנסרקו
       </label>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-right:auto">
+        <select id="email-level" style="padding:.3rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:var(--bg);color:var(--text)">
+          <option value="high">🟢 גבוהה בלבד</option>
+          <option value="medium" selected>🟡 בינונית וגבוהה</option>
+          <option value="low">🔴 כל הרמות</option>
+        </select>
+        <button class="btn btn-outline" onclick="sendEmailDigest()" style="font-size:.85rem">📧 שלח דוח במייל</button>
+      </div>
     </div>
     <div id="scan-progress" class="hidden"></div>
     <div id="scan-results"></div>
     ${S.scanDone && !S.scanResults.length ? `<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.95rem">אין מכרזים חדשים — כל המכרזים באתר כבר נותחו.<br><span style="font-size:.82rem">בטל את "דלג על שנסרקו" כדי לנתח מחדש.</span></div>` : ''}`;
   if (S.scanResults.length) renderResultList('scan-results', S.scanResults, S.filter);
+}
+
+async function sendEmailDigest() {
+  const level = document.getElementById('email-level')?.value || 'medium';
+  const tenders = [...S.scanResults, ...S.history];
+  if (!tenders.length) { toast('אין מכרזים לשליחה', 'error'); return; }
+  toast('שולח מייל...', 'success');
+  const res = await api('POST', '/api/send-email', { tenders, min_level: level });
+  if (res?.ok) toast(`✅ נשלח! ${res.count} מכרזים במייל`, 'success');
+  else toast(`שגיאה: ${res?.msg || 'לא ידוע'}`, 'error');
 }
 
 function startScan() {
