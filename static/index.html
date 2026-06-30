@@ -759,16 +759,18 @@ function startScan() {
     } else if (d.type === 'error') {
       evtSrc.close();
       S.scanRunning = false;
-      if (prog) prog.innerHTML = `<div class="error">שגיאה: ${esc(d.msg)}</div>`;
+      toast(`שגיאת סריקה: ${d.msg}`, 'error');
+      if (prog) { prog.classList.remove('hidden'); prog.innerHTML = `<div class="error" style="white-space:pre-wrap;font-size:.8rem">${esc(d.msg)}</div>`; }
+      renderTenderApp();
     }
   };
 
-  evtSrc.onerror = () => {
+  evtSrc.onerror = (e) => {
+    if (!S.scanRunning) return;
     evtSrc.close();
     S.scanRunning = false;
+    toast('שגיאה: החיבור לשרת נותק — בדוק לוגים', 'error');
     renderTenderApp();
-    const prog = document.getElementById('scan-progress');
-    if (prog) prog.innerHTML = `<div class="error">החיבור לשרת נותק</div>`;
   };
 }
 

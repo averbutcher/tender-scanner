@@ -223,8 +223,13 @@ async def scan(u: str = Depends(auth), skip_seen: bool = Query(True)):
     settings = _load_settings()
 
     async def gen():
-        client = _client()
-        loop = asyncio.get_running_loop()
+        import traceback
+        try:
+            client = _client()
+            loop = asyncio.get_running_loop()
+        except Exception as e:
+            yield f"data: {json.dumps({'type':'error','msg':f'שגיאת אתחול: {traceback.format_exc()[-400:]}'})}\n\n"
+            return
 
         yield f"data: {json.dumps({'type':'status','msg':'מתחבר ל-mr.gov.il...'})}\n\n"
         try:
