@@ -223,9 +223,31 @@ async def scan_test(u: str = Depends(auth)):
     import traceback
     try:
         settings = _load_settings()
-        from scraper import fetch_tender_list
-        results = await asyncio.wait_for(fetch_tender_list(settings), timeout=60)
-        return {"ok": True, "count": len(results), "sample": [r["title"] for r in results[:3]]}
+        from playwright.async_api import async_playwright
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            context = await browser.new_context(locale="he-IL", extra_http_headers={"Accept-Language": "he-IL,he;q=0.9"})
+            page = await context.new_page()
+            await page.goto(settings["scraper"]["base_url"], timeout=30000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(3000)
+            final_url = page.url
+            items = await page.query_selector_all("div.result-container")
+            # check show-more button with various selectors
+            show_more = None
+            show_more_sel = None
+            for sel in ["button.show-more-button","button:has-text('הצג עוד')","a:has-text('הצג עוד')",".show-more","[class*='show-more']"]:
+                el = await page.query_selector(sel)
+                if el:
+                    show_more = await el.inner_text()
+                    show_more_sel = sel
+                    break
+            # get first 3 titles
+            titles = []
+            for item in items[:3]:
+                el = await item.query_selector("h2")
+                if el: titles.append(await el.inner_text())
+            await browser.close()
+            return {"final_url": final_url, "items_found": len(items), "show_more_btn": show_more, "show_more_sel": show_more_sel, "sample_titles": titles}
     except Exception as e:
         return {"ok": False, "error": str(e), "trace": traceback.format_exc()[-1000:]}
 

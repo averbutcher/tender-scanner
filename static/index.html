@@ -708,7 +708,8 @@ function renderScanTab(el) {
       </label>
     </div>
     <div id="scan-progress" class="hidden"></div>
-    <div id="scan-results"></div>`;
+    <div id="scan-results"></div>
+    ${S.scanDone && !S.scanResults.length ? `<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.95rem">אין מכרזים חדשים — כל המכרזים באתר כבר נותחו.<br><span style="font-size:.82rem">בטל את "דלג על שנסרקו" כדי לנתח מחדש.</span></div>` : ''}`;
   if (S.scanResults.length) renderResultList('scan-results', S.scanResults, S.filter);
 }
 
@@ -752,6 +753,7 @@ function startScan() {
     } else if (d.type === 'complete') {
       evtSrc.close();
       S.scanRunning = false;
+      S.scanDone = true;
       if (barEl) barEl.style.width = '100%';
       if (d.count === 0 && d.total === 0) {
         toast('הסריקה הושלמה — לא נמצאו מכרזים חדשים באתר', 'success');
