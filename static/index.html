@@ -704,7 +704,7 @@ function renderScanTab(el) {
         ${S.scanRunning ? '⏳ סורק...' : '▶ הפעל סריקה'}
       </button>
       <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer">
-        <input type="checkbox" id="skip-seen" ${!S.scanRunning?'':'disabled'} checked> דלג על שנסרקו
+        <input type="checkbox" id="skip-seen" ${!S.scanRunning?'':'disabled'} ${S.skipSeen!==false?'checked':''} onchange="S.skipSeen=this.checked"> דלג על שנסרקו
       </label>
     </div>
     <div id="scan-progress" class="hidden"></div>

@@ -61,10 +61,13 @@ async def fetch_tender_list(settings: dict) -> list[dict]:
             return results
 
         # Keep clicking "הצג עוד" until the oldest update date on the page is past the cutoff
-        # Safety limit: ceil(max_tenders / 20) clicks, since each click loads ~20 tenders
         max_clicks = max(15, (max_tenders // 20) + 1)
         for _ in range(max_clicks):
-            btn = await page.query_selector("button.show-more-button")
+            btn = None
+            for sel in ["button.show-more-button", "button:has-text('הצג עוד')", "a:has-text('הצג עוד')", ".show-more", "[class*='show-more']"]:
+                btn = await page.query_selector(sel)
+                if btn:
+                    break
             if not btn:
                 break
             all_update_dates = await _extract_update_dates(page)
@@ -72,7 +75,7 @@ async def fetch_tender_list(settings: dict) -> list[dict]:
                 break
             try:
                 await btn.click()
-                await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(2500)
             except Exception:
                 break
 
