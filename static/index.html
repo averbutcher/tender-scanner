@@ -736,7 +736,7 @@ async function sendEmailDigest() {
   try {
     const res = await api('POST', '/api/send-email', { tenders, min_level: level, to });
     if (res?.ok) toast(`✅ נשלח! ${res.count} מכרזים במייל`, 'success');
-    else toast(`שגיאה: ${res?.msg || 'תשובה לא ידועה'}`, 'error');
+    else { alert(`שגיאת מייל:\n${res?.msg || JSON.stringify(res)}`); toast('שגיאה בשליחת מייל', 'error'); }
   } catch(e) {
     toast(`שגיאה: ${e.message}`, 'error');
   }

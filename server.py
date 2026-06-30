@@ -1057,7 +1057,8 @@ async def send_email_digest(body: dict, u: str = Depends(auth)):
             server.sendmail(sender, [recipient], msg.as_string())
         return {"ok": True, "count": len(filtered)}
     except Exception as e:
-        return {"ok": False, "msg": str(e)}
+        import traceback
+        return {"ok": False, "msg": traceback.format_exc()[-600:] or repr(e)}
 
 
 # ── Learning mode ─────────────────────────────────────────────────────────────
