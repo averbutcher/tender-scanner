@@ -51,7 +51,15 @@ async def fetch_tender_list(settings: dict) -> list[dict]:
         )
         page = await context.new_page()
 
+        # Navigate and handle redirect — site may redirect to default search
         await page.goto(base_url, timeout=timeout, wait_until="domcontentloaded")
+        await page.wait_for_timeout(2000)
+
+        # If redirected away from tender search, navigate explicitly to correct URL
+        if "s=TENDER" not in page.url:
+            target = "https://mr.gov.il/ilgstorefront/he/search/?q=%3AupdateDate%3Aarchive%3Afalse&text=&s=TENDER"
+            await page.goto(target, timeout=timeout, wait_until="domcontentloaded")
+            await page.wait_for_timeout(2000)
 
         # Wait for tender cards to appear
         try:
