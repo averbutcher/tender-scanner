@@ -822,23 +822,7 @@ async def export_word(body: dict, _: str = Depends(auth)):
     if r.get('update_date'):  p(f"תאריך עדכון: {r['update_date']}")
     doc.add_paragraph()
 
-    render_md(analysis)
-
-    if questions:
-        doc.add_paragraph()
-        h("שאלות הבהרה", 2)
-        for line in questions.splitlines():
-            if line.strip(): p(line.strip())
-
-    doc.add_paragraph()
-    h("פרופיל החברה (הקשר שנשלח לקלוד)", 2)
-    for line in SYSTEM_PROMPT.splitlines():
-        if line.strip(): p(line.strip())
-
-    if knowledge:
-        doc.add_paragraph()
-        h("הנחיות נלמדות", 2)
-        for k in knowledge: p(f"• {k}")
+    render_md(analysis.replace('<','').replace('>',''))
 
     buf = io.BytesIO()
     doc.save(buf); buf.seek(0)
