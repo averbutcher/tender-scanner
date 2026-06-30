@@ -228,9 +228,13 @@ async def scan(u: str = Depends(auth), skip_seen: bool = Query(True)):
 
         yield f"data: {json.dumps({'type':'status','msg':'מתחבר ל-mr.gov.il...'})}\n\n"
         try:
+            import traceback
             tender_list = await asyncio.wait_for(fetch_tender_list(settings), timeout=120)
+        except asyncio.TimeoutError:
+            yield f"data: {json.dumps({'type':'error','msg':'timeout — הסריקה לקחה יותר מ-120 שניות'})}\n\n"
+            return
         except Exception as e:
-            yield f"data: {json.dumps({'type':'error','msg':str(e)})}\n\n"
+            yield f"data: {json.dumps({'type':'error','msg': traceback.format_exc()[-500:]})}\n\n"
             return
 
         seen_path = _udir(u) / "seen.json"
