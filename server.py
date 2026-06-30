@@ -1037,16 +1037,14 @@ async def send_email_digest(body: dict, u: str = Depends(auth)):
     if not resend_key:
         return {"ok": False, "msg": "RESEND_API_KEY לא מוגדר בסביבה"}
 
-    import requests
+    import urllib.request, json as _json
     subject = f"[Electra Target] {len(filtered)} מכרזים — {run_date}"
     try:
-        r = requests.post("https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
-            json={"from": "Electra Target <onboarding@resend.dev>", "to": [recipient], "subject": subject, "html": html},
-            timeout=15)
-        if r.status_code == 200 or r.status_code == 201:
+        payload = _json.dumps({"from": "Electra Target <onboarding@resend.dev>", "to": [recipient], "subject": subject, "html": html}).encode()
+        req = urllib.request.Request("https://api.resend.com/emails", data=payload,
+            headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
             return {"ok": True, "count": len(filtered)}
-        return {"ok": False, "msg": r.text}
     except Exception as e:
         import traceback
         return {"ok": False, "msg": traceback.format_exc()[-600:]}
