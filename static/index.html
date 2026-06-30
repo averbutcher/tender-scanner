@@ -762,9 +762,7 @@ function startScan() {
       } else {
         toast(`✅ הסריקה הושלמה — ${d.count} מכרזים חדשים נותחו`, 'success');
       }
-      S.history = await GET('/api/history') || [];
-      renderTenderApp();
-      renderScanFilterBar();
+      GET('/api/history').then(h => { S.history = h || []; renderTenderApp(); renderScanFilterBar(); });
     } else if (d.type === 'error') {
       evtSrc.close();
       S.scanRunning = false;
