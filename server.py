@@ -491,8 +491,8 @@ async def generate_questions(body: dict, _: str = Depends(auth)):
 מועד הגשה: {r.get('deadline','')}
 ניתוח: {r.get('analysis','')}
 
-צור רשימה של 10-12 שאלות הבהרה שיש לשלוח למפרסם המכרז.
-השאלות צריכות להיות ממוקדות ומעשיות.
+צור את כל שאלות ההבהרה שיש לשלוח למפרסם המכרז — כמה שצריך, עד 50 שאלות לכל היותר.
+כלול כל שאלה חשובה שעולה מהמסמך. אל תגביל את עצמך למספר קבוע.
 
 פלט כל שאלה בפורמט הבא (עמודה מופרדת ב-|):
 מספר|עמוד|סעיף|שאלה
@@ -516,7 +516,7 @@ async def generate_questions(body: dict, _: str = Depends(auth)):
         resp = await loop.run_in_executor(
             None,
             lambda: client.messages.create(
-                model="claude-sonnet-4-6", max_tokens=2048, system=system,
+                model="claude-sonnet-4-6", max_tokens=4096, system=system,
                 messages=[{"role": "user", "content": prompt}]
             )
         )
@@ -808,6 +808,9 @@ async def export_word(body: dict, _: str = Depends(auth)):
             nm = re.match(r'^\d+\.\s+(.*)', stripped)
             if nm:
                 p(f"• {nm.group(1)}", bullet=True); i += 1; continue
+            # Horizontal rule or separator — skip
+            if re.fullmatch(r'[-_*]{2,}', stripped):
+                i += 1; continue
             # Empty
             if not stripped:
                 i += 1; continue

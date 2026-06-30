@@ -1013,9 +1013,9 @@ function favActions(r) {
   ${hasQ ? `
     <div style="border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius) var(--radius);margin-bottom:1rem;overflow:hidden">
       <button onclick="toggleQuestions('${tid}')" style="width:100%;background:var(--bg2);border:none;border-bottom:1px solid var(--border);padding:.5rem 1rem;cursor:pointer;font-size:.83rem;color:var(--muted);text-align:right;display:flex;justify-content:space-between;align-items:center">
-        <span id="qtoggle_icon_${tid}">▲ הסתר שאלות</span><span style="font-weight:600;color:var(--primary)">${r.questions.trim().split('\n').filter(l=>l.trim()).length} שאלות</span>
+        <span id="qtoggle_icon_${tid}">${localStorage.getItem('qhidden_'+tid)==='1' ? '▼ הצג שאלות' : '▲ הסתר שאלות'}</span><span style="font-weight:600;color:var(--primary)">${r.questions.trim().split('\n').filter(l=>l.trim()).length} שאלות</span>
       </button>
-      <div id="qtable_${tid}" style="padding:.75rem 1rem 1rem;direction:rtl;overflow-x:auto">${renderQuestionsTable(r.questions)}</div>
+      <div id="qtable_${tid}" style="padding:.75rem 1rem 1rem;direction:rtl;overflow-x:auto;${localStorage.getItem('qhidden_'+tid)==='1'?'display:none':''}">${renderQuestionsTable(r.questions)}</div>
     </div>` : '<div style="margin-bottom:1rem"></div>'}`;
 }
 
@@ -1042,6 +1042,7 @@ function toggleQuestions(tid) {
   const hidden = table.style.display === 'none';
   table.style.display = hidden ? '' : 'none';
   icon.textContent = hidden ? '▲ הסתר שאלות' : '▼ הצג שאלות';
+  localStorage.setItem(`qhidden_${tid}`, hidden ? '0' : '1');
 }
 
 function renderQuestionsTable(raw) {
