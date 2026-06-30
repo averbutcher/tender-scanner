@@ -706,7 +706,11 @@ function renderScanTab(el) {
       <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer">
         <input type="checkbox" id="skip-seen" ${!S.scanRunning?'':'disabled'} ${S.skipSeen!==false?'checked':''} onchange="S.skipSeen=this.checked"> דלג על שנסרקו
       </label>
-      <div style="display:flex;align-items:center;gap:.5rem;margin-right:auto">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-right:auto;flex-wrap:wrap">
+        <input type="email" id="email-to" placeholder="אימייל לשליחה" dir="ltr"
+          value="${localStorage.getItem('emailTo')||''}"
+          onchange="localStorage.setItem('emailTo',this.value)"
+          style="padding:.3rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:var(--bg);color:var(--text);width:200px">
         <select id="email-level" style="padding:.3rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:var(--bg);color:var(--text)">
           <option value="high">🟢 גבוהה בלבד</option>
           <option value="medium" selected>🟡 בינונית וגבוהה</option>
@@ -723,10 +727,13 @@ function renderScanTab(el) {
 
 async function sendEmailDigest() {
   const level = document.getElementById('email-level')?.value || 'medium';
+  const to = document.getElementById('email-to')?.value?.trim();
+  if (!to) { toast('יש להזין כתובת אימייל', 'error'); return; }
+  localStorage.setItem('emailTo', to);
   const tenders = [...S.scanResults, ...S.history];
   if (!tenders.length) { toast('אין מכרזים לשליחה', 'error'); return; }
   toast('שולח מייל...', 'success');
-  const res = await api('POST', '/api/send-email', { tenders, min_level: level });
+  const res = await api('POST', '/api/send-email', { tenders, min_level: level, to });
   if (res?.ok) toast(`✅ נשלח! ${res.count} מכרזים במייל`, 'success');
   else toast(`שגיאה: ${res?.msg || 'לא ידוע'}`, 'error');
 }

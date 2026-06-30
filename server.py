@@ -954,8 +954,9 @@ async def send_email_digest(body: dict, u: str = Depends(auth)):
     from datetime import date
     import re
 
-    tenders   = body.get("tenders", [])   # list of tender result dicts
-    min_level = body.get("min_level", "high")  # "high", "medium", "low"
+    tenders   = body.get("tenders", [])
+    min_level = body.get("min_level", "medium")
+    recipient = body.get("to", "").strip() or _load_settings()["email"]["recipient"]
 
     level_rank = {"high": 0, "medium": 1, "low": 2}
     threshold  = level_rank.get(min_level, 0)
@@ -1042,7 +1043,6 @@ async def send_email_digest(body: dict, u: str = Depends(auth)):
     import smtplib
 
     sender    = settings["email"]["sender"]
-    recipient = settings["email"]["recipient"]
     subject   = f"[Electra Target] {len(filtered)} מכרזים — {run_date}"
 
     msg = MIMEMultipart("alternative")
