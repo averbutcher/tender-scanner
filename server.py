@@ -727,14 +727,93 @@ async def export_word(body: dict, _: str = Depends(auth)):
                 run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x5F)
         return par
 
-    def p(text, bold=False):
+    from docx.shared import Cm
+    from docx.oxml import OxmlElement as OE
+
+    def add_run_inline(par, text):
+        """Add run with inline **bold** parsing."""
+        import re
+        parts = re.split(r'\*\*(.+?)\*\*', text)
+        for i, part in enumerate(parts):
+            if not part: continue
+            run = par.add_run(part)
+            run.font.name = "Arial"; run.font.size = Pt(11)
+            run.bold = (i % 2 == 1)
+            set_rtl_run(run)
+
+    def p(text, bold=False, bullet=False, size=11):
         par = doc.add_paragraph()
         set_rtl_para(par)
-        run = par.add_run(str(text))
-        run.font.name = "Arial"; run.font.cs_name = "Arial"
-        run.font.size = Pt(11); run.bold = bold
-        set_rtl_run(run)
+        if bullet:
+            pPr = par._p.get_or_add_pPr()
+            ind = OE('w:ind'); ind.set(qn('w:right'), '360'); pPr.append(ind)
+        if bold:
+            run = par.add_run(str(text))
+            run.font.name = "Arial"; run.font.cs_name = "Arial"
+            run.font.size = Pt(size); run.bold = True
+            set_rtl_run(run)
+        else:
+            add_run_inline(par, str(text))
         return par
+
+    def render_md(text):
+        """Render markdown text into the Word document."""
+        import re
+        lines = text.splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+            # Heading
+            hm = re.match(r'^(#{1,3})\s+(.*)', stripped)
+            if hm:
+                level = min(len(hm.group(1)) + 1, 3)
+                h(hm.group(2).replace('**',''), level)
+                i += 1; continue
+            # Table
+            if stripped.startswith('|') and stripped.endswith('|'):
+                tbl_lines = []
+                while i < len(lines) and lines[i].strip().startswith('|'):
+                    tbl_lines.append(lines[i].strip()); i += 1
+                data_rows = [r for r in tbl_lines if not re.fullmatch(r'[\|\-\s:]+', r)]
+                if not data_rows: continue
+                parsed = [[c.strip() for c in r.strip('|').split('|')] for r in data_rows]
+                ncols = max(len(r) for r in parsed)
+                tbl = doc.add_table(rows=len(parsed), cols=ncols)
+                tbl.style = 'Table Grid'
+                for ri, row in enumerate(parsed):
+                    for ci, val in enumerate(row):
+                        cell = tbl.rows[ri].cells[ci]
+                        cell.paragraphs[0].clear()
+                        cp = cell.paragraphs[0]
+                        cp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                        pPr = cp._p.get_or_add_pPr()
+                        b = OE('w:bidi'); b.set(qn('w:val'),'1'); pPr.append(b)
+                        run = cp.add_run(val)
+                        run.font.name = "Arial"; run.font.size = Pt(10)
+                        run.bold = (ri == 0)
+                        if ri == 0: run.font.color.rgb = RGBColor(0xFF,0xFF,0xFF)
+                        set_rtl_run(run)
+                        tcPr = cell._tc.get_or_add_tcPr()
+                        shd = OE('w:shd')
+                        shd.set(qn('w:fill'), '1E3A5F' if ri==0 else ('EEF3FA' if ri%2==0 else 'FFFFFF'))
+                        shd.set(qn('w:color'),'auto'); shd.set(qn('w:val'),'clear')
+                        tcPr.append(shd)
+                continue
+            # Bullet
+            bm = re.match(r'^[-*+]\s+(.*)', stripped)
+            if bm:
+                p(f"• {bm.group(1)}", bullet=True); i += 1; continue
+            # Numbered list
+            nm = re.match(r'^\d+\.\s+(.*)', stripped)
+            if nm:
+                p(f"• {nm.group(1)}", bullet=True); i += 1; continue
+            # Empty
+            if not stripped:
+                i += 1; continue
+            # Normal
+            p(stripped)
+            i += 1
 
     h(f"ניתוח מכרז: {r.get('title','')}", 1)
     if r.get('publisher'):    p(f"מפרסם: {r['publisher']}")
@@ -743,12 +822,7 @@ async def export_word(body: dict, _: str = Depends(auth)):
     if r.get('update_date'):  p(f"תאריך עדכון: {r['update_date']}")
     doc.add_paragraph()
 
-    h("ניתוח", 2)
-    for line in analysis.splitlines():
-        if line.strip():
-            bold = line.strip().startswith("**") or line.strip().startswith("#")
-            clean = line.strip().replace("**","").replace("##","").replace("#","").strip()
-            p(clean, bold=bold)
+    render_md(analysis)
 
     if questions:
         doc.add_paragraph()
