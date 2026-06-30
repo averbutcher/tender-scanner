@@ -237,6 +237,7 @@ async def scan(u: str = Depends(auth), skip_seen: bool = Query(True)):
         seen = load_seen(seen_path) if skip_seen else set()
         new = filter_new(tender_list, seen) if skip_seen else tender_list
 
+        yield f"data: {json.dumps({'type':'status','msg':f'נמצאו {len(tender_list)} מכרזים, {len(new)} חדשים לניתוח'})}\n\n"
         yield f"data: {json.dumps({'type':'count','total':len(tender_list),'new':len(new)})}\n\n"
 
         if not new:

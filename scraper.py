@@ -89,10 +89,6 @@ async def fetch_tender_list(settings: dict) -> list[dict]:
                 if not href.startswith("http"):
                     href = BASE + href
 
-                # Skip catalog/product items — their IDs are purely numeric starting with 4xxxxxxx
-                raw_id = href.rstrip("/").split("/p/")[-1].split("?")[0]
-                if re.fullmatch(r'4\d{7,}', raw_id):
-                    continue
 
                 update_date = await _card_update_date(item)
                 if update_date and update_date < cutoff:
