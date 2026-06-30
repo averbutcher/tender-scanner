@@ -754,6 +754,7 @@ function startScan() {
       S.scanRunning = false;
       if (statusEl) statusEl.textContent = `✅ הסריקה הושלמה — ${d.count} מכרזים נותחו`;
       if (barEl) barEl.style.width = '100%';
+      renderTenderApp();
       renderScanFilterBar();
     } else if (d.type === 'error') {
       evtSrc.close();
@@ -765,6 +766,7 @@ function startScan() {
   evtSrc.onerror = () => {
     evtSrc.close();
     S.scanRunning = false;
+    renderTenderApp();
     const prog = document.getElementById('scan-progress');
     if (prog) prog.innerHTML = `<div class="error">החיבור לשרת נותק</div>`;
   };
