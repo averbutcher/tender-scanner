@@ -1033,8 +1033,7 @@ async def send_email_digest(body: dict, u: str = Depends(auth)):
       <p style="font-family:Arial,sans-serif;font-size:12px;color:#999;text-align:center;margin-top:30px">Electra Target Tools</p>
     </body></html>"""
 
-    settings   = _load_settings()
-    app_pw     = os.environ.get("GMAIL_APP_PASSWORD","")
+    app_pw = os.environ.get("GMAIL_APP_PASSWORD","")
     if not app_pw:
         return {"ok": False, "msg": "GMAIL_APP_PASSWORD לא מוגדר בסביבה"}
 
@@ -1042,7 +1041,7 @@ async def send_email_digest(body: dict, u: str = Depends(auth)):
     from email.mime.text import MIMEText
     import smtplib
 
-    sender    = settings["email"]["sender"]
+    sender = "daniel.averbuch123@gmail.com"
     subject   = f"[Electra Target] {len(filtered)} מכרזים — {run_date}"
 
     msg = MIMEMultipart("alternative")
@@ -1052,13 +1051,16 @@ async def send_email_digest(body: dict, u: str = Depends(auth)):
     msg.attach(MIMEText(html, "html", "utf-8"))
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
             server.login(sender, app_pw)
             server.sendmail(sender, [recipient], msg.as_string())
         return {"ok": True, "count": len(filtered)}
     except Exception as e:
         import traceback
-        return {"ok": False, "msg": traceback.format_exc()[-600:] or repr(e)}
+        return {"ok": False, "msg": traceback.format_exc()[-800:] or repr(e) or type(e).__name__}
 
 
 # ── Learning mode ─────────────────────────────────────────────────────────────
