@@ -197,6 +197,19 @@ async def patch_history(tid: str, body: dict, u: str = Depends(auth)):
     _wj(path, h)
     return {"ok": True}
 
+@app.delete("/api/history/{tid}")
+async def delete_history(tid: str, u: str = Depends(auth)):
+    path = _udir(u) / "history.json"
+    h = _rj(path, [])
+    h = [r for r in h if r.get("tender_id") != tid]
+    _wj(path, h)
+    # also remove from seen so it can be re-scanned
+    seen_path = _udir(u) / "seen.json"
+    seen = load_seen(seen_path)
+    seen.discard(tid)
+    save_seen(seen, seen_path)
+    return {"ok": True}
+
 @app.get("/api/last-scan")
 async def get_last_scan(u: str = Depends(auth)):
     return _rj(_udir(u) / "last_scan.json", [])

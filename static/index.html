@@ -762,6 +762,7 @@ function startScan() {
       } else {
         toast(`✅ הסריקה הושלמה — ${d.count} מכרזים חדשים נותחו`, 'success');
       }
+      S.history = await GET('/api/history') || [];
       renderTenderApp();
       renderScanFilterBar();
     } else if (d.type === 'error') {
@@ -826,6 +827,7 @@ function tenderCard(r, _filter, prefix) {
         <div class="card-title">${badgeHtml(rel)} &nbsp;${esc(r.title.substring(0,90))}${r.title.length>90?'...':''}</div>
         <div style="display:flex;align-items:center;gap:.5rem">
           <button class="fav-btn" onclick="event.stopPropagation();toggleFav('${r.tender_id}')">${isFav?'⭐':'☆'}</button>
+          <button class="fav-btn" title="מחק מהיסטוריה" onclick="event.stopPropagation();deleteFromHistory('${r.tender_id}')">🗑️</button>
           <span class="card-chevron">▼</span>
         </div>
       </div>
@@ -849,6 +851,15 @@ function tenderCard(r, _filter, prefix) {
 
 function toggleCard(id) {
   document.getElementById(id)?.classList.toggle('open');
+}
+
+async function deleteFromHistory(tid) {
+  if (!confirm('למחוק מכרז זה מהיסטוריה?')) return;
+  await api('DELETE', `/api/history/${tid}`);
+  S.history = S.history.filter(r => r.tender_id !== tid);
+  S.scanResults = S.scanResults.filter(r => r.tender_id !== tid);
+  S.favorites = S.favorites.filter(id => id !== tid);
+  renderTenderApp();
 }
 
 async function toggleFav(tid) {
