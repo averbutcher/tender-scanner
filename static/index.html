@@ -1651,6 +1651,12 @@ function renderShiftsApp() {
   const el = document.getElementById('shifts-content');
   el.innerHTML = `
     <p style="font-size:.83rem;color:var(--muted);margin-bottom:1.2rem">הדבק הודעת וואטסאפ ועלה קובץ אקסל להשוואת משמרות</p>
+    <div id="gmail-bar" style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem;padding:.6rem .8rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)">
+      <span style="font-size:.85rem;font-weight:600">📧 Gmail</span>
+      <span id="gmail-status-text" style="font-size:.82rem;color:var(--muted)">לא מחובר</span>
+      <button class="btn btn-outline" style="font-size:.8rem;padding:.25rem .7rem" onclick="connectGmail()">🔗 התחבר ל-Gmail</button>
+      <button class="btn btn-primary" style="font-size:.8rem;padding:.25rem .7rem;display:none" id="fetch-gmail-btn" onclick="fetchFromGmail()">📥 משוך קובץ ממייל</button>
+    </div>
     <div class="shifts-grid">
       <div>
         <div style="font-size:.82rem;font-weight:600;margin-bottom:.4rem">📱 הודעת וואטסאפ</div>
@@ -1673,6 +1679,48 @@ function renderShiftsApp() {
     <div id="shifts-result"></div>`;
 
   if (S.shiftsResult) renderShiftsResult();
+  checkGmailStatus();
+}
+
+async function checkGmailStatus() {
+  const res = await GET('/auth/gmail/status');
+  if (res?.connected) {
+    document.getElementById('gmail-status-text').textContent = '✅ מחובר';
+    document.getElementById('gmail-status-text').style.color = 'var(--success)';
+    document.getElementById('fetch-gmail-btn').style.display = '';
+  }
+}
+
+function connectGmail() {
+  const w = window.open('/auth/gmail/connect', 'gmail_oauth', 'width=500,height=600');
+  window.addEventListener('message', async (e) => {
+    if (e.data === 'gmail_connected') {
+      w?.close();
+      await checkGmailStatus();
+      toast('Gmail מחובר בהצלחה!', 'success');
+    }
+  }, { once: true });
+}
+
+async function fetchFromGmail() {
+  const btn = document.getElementById('fetch-gmail-btn');
+  btn.textContent = '⏳ מושך...';
+  btn.disabled = true;
+  try {
+    const res = await api('POST', '/api/shifts/fetch-from-gmail');
+    if (res?.ok) {
+      const r = await fetch(`/api/shifts/download/${res.token}`, { credentials: 'same-origin' });
+      const blob = await r.blob();
+      const file = new File([blob], res.filename, { type: blob.type });
+      handleFile(file);
+      toast(`✅ קובץ "${res.filename}" נטען ממייל`, 'success');
+    }
+  } catch(e) {
+    toast(`שגיאה: ${e.message}`, 'error');
+  } finally {
+    btn.textContent = '📥 משוך קובץ ממייל';
+    btn.disabled = false;
+  }
 }
 
 function handleFile(file) {

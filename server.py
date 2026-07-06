@@ -1222,6 +1222,97 @@ def _load_recruiter_config() -> dict:
 def _save_recruiter_config(cfg: dict):
     _wj(RECRUITER_CONFIG_FILE, cfg)
 
+# ── Gmail OAuth ───────────────────────────────────────────────────────────────
+GMAIL_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
+GMAIL_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GMAIL_REDIRECT_URI  = "https://tender-scanner.up.railway.app/auth/gmail/callback"
+GMAIL_SCOPES        = "https://www.googleapis.com/auth/gmail.readonly"
+_gmail_tokens: dict = {}  # username -> {access_token, refresh_token}
+
+@app.get("/auth/gmail/connect")
+async def gmail_connect(u: str = Depends(auth)):
+    import urllib.parse
+    params = urllib.parse.urlencode({
+        "client_id": GMAIL_CLIENT_ID,
+        "redirect_uri": GMAIL_REDIRECT_URI,
+        "response_type": "code",
+        "scope": GMAIL_SCOPES,
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": u,
+    })
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
+
+@app.get("/auth/gmail/callback")
+async def gmail_callback(code: str, state: str):
+    import urllib.request, urllib.parse, json as _json
+    data = urllib.parse.urlencode({
+        "code": code,
+        "client_id": GMAIL_CLIENT_ID,
+        "client_secret": GMAIL_CLIENT_SECRET,
+        "redirect_uri": GMAIL_REDIRECT_URI,
+        "grant_type": "authorization_code",
+    }).encode()
+    req = urllib.request.Request("https://oauth2.googleapis.com/token", data=data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST")
+    with urllib.request.urlopen(req) as resp:
+        tokens = _json.loads(resp.read())
+    _gmail_tokens[state] = tokens
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse("<script>window.close();window.opener&&window.opener.postMessage('gmail_connected','*')</script>✅ Gmail מחובר! ניתן לסגור חלון זה.")
+
+@app.get("/auth/gmail/status")
+async def gmail_status(u: str = Depends(auth)):
+    return {"connected": u in _gmail_tokens}
+
+@app.post("/api/shifts/fetch-from-gmail")
+async def fetch_shifts_from_gmail(u: str = Depends(auth)):
+    import urllib.request, urllib.parse, json as _json, base64
+    tokens = _gmail_tokens.get(u)
+    if not tokens:
+        raise HTTPException(400, "Gmail לא מחובר")
+    access_token = tokens.get("access_token", "")
+
+    def gmail_get(url):
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {access_token}"})
+        with urllib.request.urlopen(req) as r:
+            return _json.loads(r.read())
+
+    # Search for latest email from clock2go
+    q = urllib.parse.quote('from:support@clock2go.co.il subject:דו"ח נוכחות כולל משימות יומי')
+    result = gmail_get(f"https://gmail.googleapis.com/gmail/v1/users/me/messages?q={q}&maxResults=1")
+    messages = result.get("messages", [])
+    if not messages:
+        raise HTTPException(404, "לא נמצא מייל מ-clock2go עם קובץ נוכחות")
+
+    msg = gmail_get(f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{messages[0]['id']}")
+    subject = next((h["value"] for h in msg["payload"]["headers"] if h["name"] == "Subject"), "")
+
+    # Find Excel attachment
+    def find_parts(part):
+        if part.get("filename","").endswith((".xlsx",".xls")) and part.get("body",{}).get("attachmentId"):
+            return part
+        for p in part.get("parts", []):
+            found = find_parts(p)
+            if found:
+                return found
+        return None
+
+    att_part = find_parts(msg["payload"])
+    if not att_part:
+        raise HTTPException(404, "לא נמצא קובץ Excel במייל")
+
+    att_id = att_part["body"]["attachmentId"]
+    att = gmail_get(f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{messages[0]['id']}/attachments/{att_id}")
+    file_bytes = base64.urlsafe_b64decode(att["data"])
+
+    # Save to temp and return as upload token
+    token = secrets.token_hex(16)
+    _excel_cache[token] = file_bytes
+    return {"ok": True, "token": token, "filename": att_part["filename"], "subject": subject}
+
+
 @app.get("/api/recruiter/config")
 async def recruiter_config_get(_: str = Depends(auth)):
     return _load_recruiter_config()
