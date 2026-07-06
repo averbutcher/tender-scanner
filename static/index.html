@@ -345,16 +345,11 @@ const DEL  = p => api('DELETE', p);
 function relevance(analysis) {
   if (analysis === 'NO_PDF') return 'no_pdf';
   if (!analysis || analysis.startsWith('שגיאה')) return 'unknown';
-  const m1 = analysis.match(/רלוונטיות[^\n]*?:\s*\**([גבוהבינוניתנמוכה]+)/);
-  if (m1) {
-    const w = m1[1];
-    if (w.includes('גבוהה')) return 'high';
-    if (w.includes('בינונית')) return 'medium';
-    if (w.includes('נמוכה')) return 'low';
-  }
-  if (analysis.includes('גבוהה')) return 'high';
-  if (analysis.includes('בינונית')) return 'medium';
-  if (analysis.includes('נמוכה')) return 'low';
+  // Read only the first line which Claude is instructed to format as "רמת רלוונטיות: X"
+  const firstLine = analysis.split('\n')[0];
+  if (firstLine.includes('גבוהה')) return 'high';
+  if (firstLine.includes('בינונית')) return 'medium';
+  if (firstLine.includes('נמוכה')) return 'low';
   return 'unknown';
 }
 function badgeHtml(r) {

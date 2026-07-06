@@ -962,8 +962,9 @@ async def send_email_digest(body: dict, u: str = Depends(auth)):
     threshold  = level_rank.get(min_level, 0)
 
     def get_rank(analysis):
-        if "גבוהה" in analysis: return 0
-        if "בינונית" in analysis: return 1
+        first_line = (analysis or "").split("\n")[0]
+        if "גבוהה" in first_line: return 0
+        if "בינונית" in first_line: return 1
         return 2
 
     def extract_summary(analysis: str) -> str:
