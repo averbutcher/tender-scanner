@@ -1267,7 +1267,7 @@ async def gmail_status(u: str = Depends(auth)):
     return {"connected": u in _gmail_tokens}
 
 @app.post("/api/shifts/fetch-from-gmail")
-async def fetch_shifts_from_gmail(u: str = Depends(auth)):
+async def fetch_shifts_from_gmail(body: dict = {}, u: str = Depends(auth)):
     import urllib.request, urllib.parse, json as _json, base64
     tokens = _gmail_tokens.get(u)
     if not tokens:
@@ -1279,8 +1279,10 @@ async def fetch_shifts_from_gmail(u: str = Depends(auth)):
         with urllib.request.urlopen(req) as r:
             return _json.loads(r.read())
 
-    # Search for latest email from clock2go
-    q = urllib.parse.quote('from:support@clock2go.co.il subject:דו"ח נוכחות כולל משימות יומי')
+    # Search for email from clock2go, optionally filtered by date in subject
+    date_str = body.get("date", "")
+    subject_query = f'דו"ח נוכחות כולל משימות יומי {date_str}'.strip()
+    q = urllib.parse.quote(f'from:support@clock2go.co.il subject:{subject_query}')
     result = gmail_get(f"https://gmail.googleapis.com/gmail/v1/users/me/messages?q={q}&maxResults=1")
     messages = result.get("messages", [])
     if not messages:

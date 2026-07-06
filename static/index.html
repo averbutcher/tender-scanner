@@ -1655,6 +1655,7 @@ function renderShiftsApp() {
       <span style="font-size:.85rem;font-weight:600">📧 Gmail</span>
       <span id="gmail-status-text" style="font-size:.82rem;color:var(--muted)">לא מחובר</span>
       <button class="btn btn-outline" style="font-size:.8rem;padding:.25rem .7rem" onclick="connectGmail()">🔗 התחבר ל-Gmail</button>
+      <input type="date" id="gmail-date" style="padding:.25rem .5rem;border:1px solid var(--border);border-radius:6px;font-size:.82rem;background:var(--bg);color:var(--text);display:none">
       <button class="btn btn-primary" style="font-size:.8rem;padding:.25rem .7rem;display:none" id="fetch-gmail-btn" onclick="fetchFromGmail()">📥 משוך קובץ ממייל</button>
     </div>
     <div class="shifts-grid">
@@ -1687,6 +1688,12 @@ async function checkGmailStatus() {
   if (res?.connected) {
     document.getElementById('gmail-status-text').textContent = '✅ מחובר';
     document.getElementById('gmail-status-text').style.color = 'var(--success)';
+    const dateEl = document.getElementById('gmail-date');
+    dateEl.style.display = '';
+    if (!dateEl.value) {
+      const today = new Date();
+      dateEl.value = today.toISOString().split('T')[0];
+    }
     document.getElementById('fetch-gmail-btn').style.display = '';
   }
 }
@@ -1704,10 +1711,13 @@ function connectGmail() {
 
 async function fetchFromGmail() {
   const btn = document.getElementById('fetch-gmail-btn');
+  const dateVal = document.getElementById('gmail-date')?.value;
+  // Convert YYYY-MM-DD to DD-MM-YYYY for subject search
+  const dateFmt = dateVal ? dateVal.split('-').reverse().join('-') : '';
   btn.textContent = '⏳ מושך...';
   btn.disabled = true;
   try {
-    const res = await api('POST', '/api/shifts/fetch-from-gmail');
+    const res = await api('POST', '/api/shifts/fetch-from-gmail', { date: dateFmt });
     if (res?.ok) {
       const r = await fetch(`/api/shifts/download/${res.token}`, { credentials: 'same-origin' });
       const blob = await r.blob();
