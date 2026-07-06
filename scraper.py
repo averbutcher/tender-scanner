@@ -274,6 +274,7 @@ async def _find_booklet_pdf(page: Page) -> Optional[str]:
     """Find חוברת המכרז PDF or Word document link on the page."""
     for selector in [
         "a:has-text('חוברת המכרז')",
+        "a:has-text('מסמכי הליך')",
         "a:has-text('חוברת')",
         "a[href$='.pdf']",
         "a[href$='.docx']",
