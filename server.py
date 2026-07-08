@@ -11,7 +11,7 @@ from typing import Optional
 import anthropic as _anthropic
 import bcrypt
 import yaml
-from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
