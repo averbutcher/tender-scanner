@@ -1222,6 +1222,44 @@ def _load_recruiter_config() -> dict:
 def _save_recruiter_config(cfg: dict):
     _wj(RECRUITER_CONFIG_FILE, cfg)
 
+# ── WhatsApp Webhook ──────────────────────────────────────────────────────────
+WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "electra_target_verify_2024")
+_whatsapp_messages: list = []  # stores last received shift messages
+
+@app.get("/api/whatsapp/webhook")
+async def whatsapp_verify(request: Request):
+    """Meta webhook verification handshake."""
+    params = dict(request.query_params)
+    if params.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN and params.get("hub.mode") == "subscribe":
+        return Response(content=params.get("hub.challenge", ""), media_type="text/plain")
+    raise HTTPException(403, "Invalid verify token")
+
+@app.post("/api/whatsapp/webhook")
+async def whatsapp_receive(request: Request):
+    """Receive incoming WhatsApp messages."""
+    data = await request.json()
+    try:
+        for entry in data.get("entry", []):
+            for change in entry.get("changes", []):
+                messages = change.get("value", {}).get("messages", [])
+                for msg in messages:
+                    if msg.get("type") == "text":
+                        text = msg["text"]["body"]
+                        if text.strip().startswith("!משמרות"):
+                            content = text[len("!משמרות"):].strip()
+                            _whatsapp_messages.insert(0, {"text": content, "timestamp": msg.get("timestamp","")})
+                            _whatsapp_messages[:] = _whatsapp_messages[:10]  # keep last 10
+    except Exception:
+        pass
+    return {"status": "ok"}
+
+@app.get("/api/whatsapp/latest-message")
+async def whatsapp_latest(u: str = Depends(auth)):
+    if not _whatsapp_messages:
+        return {"ok": False, "msg": "לא נמצאה הודעת משמרות"}
+    return {"ok": True, "text": _whatsapp_messages[0]["text"]}
+
+
 # ── Gmail OAuth ───────────────────────────────────────────────────────────────
 GMAIL_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
 GMAIL_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
