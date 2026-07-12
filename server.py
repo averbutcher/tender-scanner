@@ -1312,6 +1312,83 @@ async def delete_saved_shift(row_id: str, u: str = Depends(auth)):
     return {"ok": True}
 
 
+# ── Workers ───────────────────────────────────────────────────────────────────
+
+def _workers_path(u: str) -> Path:
+    return _udir(u) / "workers.json"
+
+def _load_workers(u: str) -> list:
+    return _rj(_workers_path(u), [])
+
+def _save_workers(u: str, workers: list):
+    _workers_path(u).write_text(json.dumps(workers, ensure_ascii=False, indent=2), encoding="utf-8")
+
+@app.post("/api/workers/upload")
+async def upload_workers(u: str = Depends(auth), file: UploadFile = File(...)):
+    import uuid as _uuid
+    data = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = tmp.name
+    try:
+        df = pd.read_excel(tmp_path, header=0)
+        df.columns = [str(c).strip() for c in df.columns]
+        # Try to map common Hebrew column names
+        col_map = {
+            "שם מלא": "full_name", "שם": "full_name",
+            "תעודת זהות": "id", "ת.ז": "id", "ת\"ז": "id", "מספר עובד": "id",
+            "כינוי": "nickname", "שם כינוי": "nickname",
+            "מנהל": "manager", "שם מנהל": "manager",
+            "יעד מכירות": "sales_target", "יעד": "sales_target",
+        }
+        workers = []
+        for _, row in df.iterrows():
+            w = {"id": str(_uuid.uuid4())}
+            for heb, eng in col_map.items():
+                for col in df.columns:
+                    if heb in col and eng not in w:
+                        val = row[col]
+                        w[eng] = "" if (val is None or (isinstance(val, float) and pd.isna(val))) else str(val).strip()
+            if not w.get("full_name"):
+                continue
+            workers.append(w)
+        _save_workers(u, workers)
+        return {"ok": True, "count": len(workers)}
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+@app.get("/api/workers")
+async def get_workers(u: str = Depends(auth)):
+    return _load_workers(u)
+
+@app.post("/api/workers")
+async def add_worker(body: dict, u: str = Depends(auth)):
+    import uuid as _uuid
+    workers = _load_workers(u)
+    body["id"] = str(_uuid.uuid4())
+    workers.append(body)
+    _save_workers(u, workers)
+    return {"ok": True, "worker": body}
+
+@app.put("/api/workers/{worker_id}")
+async def update_worker(worker_id: str, body: dict, u: str = Depends(auth)):
+    workers = _load_workers(u)
+    for i, w in enumerate(workers):
+        if w.get("id") == worker_id:
+            body["id"] = worker_id
+            workers[i] = body
+            _save_workers(u, workers)
+            return {"ok": True}
+    raise HTTPException(404, "עובד לא נמצא")
+
+@app.delete("/api/workers/{worker_id}")
+async def delete_worker(worker_id: str, u: str = Depends(auth)):
+    workers = _load_workers(u)
+    workers = [w for w in workers if w.get("id") != worker_id]
+    _save_workers(u, workers)
+    return {"ok": True}
+
+
 # ── Recruiter Analysis ────────────────────────────────────────────────────────
 
 RECRUITER_CONFIG_FILE = BASE_DIR / "data" / "shared" / "recruiter_config.json"

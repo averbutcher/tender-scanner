@@ -1671,11 +1671,18 @@ function renderShiftsApp() {
       <div class="tab ${_shiftsTab==='compare'?'active':''}" onclick="switchShiftsTab('compare')">⚡ השוואה</div>
       <div class="tab ${_shiftsTab==='saved'?'active':''}" onclick="switchShiftsTab('saved')">📋 שעות עובדים</div>
       <div class="tab ${_shiftsTab==='sales'?'active':''}" onclick="switchShiftsTab('sales')">💰 מכירות</div>
+      <div class="tab ${_shiftsTab==='workers'?'active':''}" onclick="switchShiftsTab('workers')">👷 עובדים</div>
     </div>`;
 
   if (_shiftsTab === 'saved') {
     el.innerHTML = tabBar + `<div id="saved-shifts-content"><div class="info">טוען...</div></div>`;
     loadSavedShifts();
+    return;
+  }
+
+  if (_shiftsTab === 'workers') {
+    el.innerHTML = tabBar + `<div id="workers-content"><div class="info">טוען...</div></div>`;
+    loadWorkers();
     return;
   }
 
@@ -1862,6 +1869,159 @@ async function loadSavedShifts() {
 }
 
 let _savedRows = []; // cache for client-side sort
+let _workersSort = { col: 'full_name', dir: 1 };
+
+async function loadWorkers() {
+  const rows = await GET('/api/workers');
+  renderWorkersTable(rows || []);
+}
+
+function renderWorkersTable(workers) {
+  const el = document.getElementById('workers-content');
+  if (!el) return;
+
+  const sorted = [...workers].sort((a, b) => {
+    const va = String(a[_workersSort.col] ?? '');
+    const vb = String(b[_workersSort.col] ?? '');
+    return va.localeCompare(vb, 'he') * _workersSort.dir;
+  });
+
+  const arrow = col => _workersSort.col !== col
+    ? `<span style="color:var(--border);font-size:.7rem;margin-right:.2rem">⇅</span>`
+    : `<span style="font-size:.7rem;margin-right:.2rem">${_workersSort.dir===1?'↑':'↓'}</span>`;
+  const th = (label, col) =>
+    `<th style="padding:.4rem .6rem;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;user-select:none" onclick="sortWorkers('${col}')">${label}${arrow(col)}</th>`;
+
+  el.innerHTML = `
+    <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+      <button class="btn btn-primary" style="font-size:.82rem" onclick="showAddWorkerForm()">+ הוסף עובד</button>
+      <label class="btn btn-outline" style="font-size:.82rem;cursor:pointer">
+        📥 העלה Excel
+        <input type="file" accept=".xlsx,.xls" onchange="uploadWorkersExcel(this)" style="display:none">
+      </label>
+      <span style="font-size:.8rem;color:var(--muted);margin-right:auto">${workers.length} עובדים</span>
+    </div>
+    <div id="worker-form-area"></div>
+    ${workers.length === 0 ? '<div class="info">אין עובדים. העלה קובץ Excel או הוסף עובד ידנית.</div>' : `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+        <thead><tr style="background:var(--surface);text-align:right">
+          ${th('שם מלא','full_name')}${th('ת.ז','id_number')}${th('כינוי','nickname')}
+          ${th('מנהל','manager')}${th('יעד מכירות','sales_target')}
+          <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"></th>
+        </tr></thead>
+        <tbody>
+          ${sorted.map(w => workerRowHtml(w)).join('')}
+        </tbody>
+      </table>
+    </div>`}`;
+}
+
+function sortWorkers(col) {
+  if (_workersSort.col === col) _workersSort.dir *= -1;
+  else { _workersSort.col = col; _workersSort.dir = 1; }
+  loadWorkers();
+}
+
+function workerRowHtml(w) {
+  return `<tr id="wrow-${w.id}" style="border-bottom:1px solid var(--border)">
+    <td style="padding:.4rem .6rem;font-weight:600">${esc(w.full_name||'')}</td>
+    <td style="padding:.4rem .6rem">${esc(w.id_number||'')}</td>
+    <td style="padding:.4rem .6rem">${esc(w.nickname||'')}</td>
+    <td style="padding:.4rem .6rem">${esc(w.manager||'')}</td>
+    <td style="padding:.4rem .6rem">${esc(w.sales_target||'')}</td>
+    <td style="padding:.4rem .6rem;white-space:nowrap">
+      <button class="btn btn-outline" style="font-size:.75rem;padding:.15rem .45rem" onclick="editWorkerRow('${w.id}')">✏️</button>
+      <button class="btn btn-outline" style="font-size:.75rem;padding:.15rem .45rem;color:var(--red)" onclick="deleteWorker('${w.id}')">🗑️</button>
+    </td>
+  </tr>`;
+}
+
+function workerFieldsHtml(w) {
+  const inp = (field, val, placeholder, w2='120px') =>
+    `<input value="${esc(val||'')}" data-field="${field}" placeholder="${placeholder}"
+      style="width:${w2};padding:.25rem .4rem;border:1px solid var(--border);border-radius:4px;font-size:.8rem;background:var(--bg);color:var(--text)">`;
+  return `
+    ${inp('full_name', w.full_name, 'שם מלא', '140px')}
+    ${inp('id_number', w.id_number, 'ת.ז', '90px')}
+    ${inp('nickname', w.nickname, 'כינוי', '100px')}
+    ${inp('manager', w.manager, 'מנהל', '120px')}
+    ${inp('sales_target', w.sales_target, 'יעד מכירות', '90px')}`;
+}
+
+function showAddWorkerForm() {
+  const area = document.getElementById('worker-form-area');
+  if (!area) return;
+  area.innerHTML = `
+    <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;padding:.6rem .8rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:1rem">
+      <span style="font-size:.82rem;font-weight:600;margin-left:.5rem">עובד חדש:</span>
+      ${workerFieldsHtml({})}
+      <button class="btn btn-primary" style="font-size:.78rem;padding:.2rem .6rem" onclick="submitAddWorker()">הוסף</button>
+      <button class="btn btn-outline" style="font-size:.78rem;padding:.2rem .6rem" onclick="document.getElementById('worker-form-area').innerHTML=''">ביטול</button>
+    </div>`;
+}
+
+async function submitAddWorker() {
+  const area = document.getElementById('worker-form-area');
+  const data = {};
+  area.querySelectorAll('[data-field]').forEach(inp => { data[inp.dataset.field] = inp.value.trim(); });
+  if (!data.full_name) { toast('שם מלא הוא שדה חובה', 'error'); return; }
+  await api('POST', '/api/workers', data);
+  await loadWorkers();
+}
+
+function editWorkerRow(id) {
+  const tr = document.getElementById('wrow-' + id);
+  if (!tr) return;
+  const cells = tr.querySelectorAll('td');
+  const w = { full_name: cells[0].textContent.trim(), id_number: cells[1].textContent.trim(),
+               nickname: cells[2].textContent.trim(), manager: cells[3].textContent.trim(),
+               sales_target: cells[4].textContent.trim() };
+  tr.innerHTML = `
+    <td colspan="5" style="padding:.3rem .4rem">
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
+        ${workerFieldsHtml(w)}
+      </div>
+    </td>
+    <td style="padding:.3rem .4rem;white-space:nowrap">
+      <button class="btn btn-primary" style="font-size:.75rem;padding:.15rem .5rem" onclick="saveWorkerRow('${id}')">שמור</button>
+      <button class="btn btn-outline" style="font-size:.75rem;padding:.15rem .5rem" onclick="loadWorkers()">ביטול</button>
+    </td>`;
+}
+
+async function saveWorkerRow(id) {
+  const tr = document.getElementById('wrow-' + id);
+  const data = { id };
+  tr.querySelectorAll('[data-field]').forEach(inp => { data[inp.dataset.field] = inp.value.trim(); });
+  await api('PUT', `/api/workers/${id}`, data);
+  await loadWorkers();
+}
+
+async function deleteWorker(id) {
+  if (!confirm('למחוק עובד זה?')) return;
+  await api('DELETE', `/api/workers/${id}`);
+  await loadWorkers();
+}
+
+async function uploadWorkersExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const existing = await GET('/api/workers');
+  if (existing?.length > 0) {
+    if (!confirm(`קיימים ${existing.length} עובדים. העלאה תמחק את כל הנתונים הקיימים ותחליף אותם. להמשיך?`)) {
+      input.value = '';
+      return;
+    }
+  }
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await api('POST', '/api/workers/upload', fd, true);
+  if (res?.ok) {
+    toast(`✅ ${res.count} עובדים נטענו בהצלחה`, 'success');
+    await loadWorkers();
+  }
+  input.value = '';
+}
 let _salesFile = null;
 
 function handleSalesFile(file) {
