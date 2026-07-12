@@ -1907,7 +1907,7 @@ function renderWorkersTable(workers) {
       <table style="width:100%;border-collapse:collapse;font-size:.82rem">
         <thead><tr style="background:var(--surface);text-align:right">
           ${th('שם מלא','full_name')}${th('ת.ז','id_number')}${th('כינוי','nickname')}
-          ${th('מנהל','manager')}${th('יעד מכירות','sales_target')}
+          ${th('מנהל','manager')}${th('דרגה','rank')}${th('יעד מכירות','sales_target')}
           <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"></th>
         </tr></thead>
         <tbody>
@@ -1929,6 +1929,7 @@ function workerRowHtml(w) {
     <td style="padding:.4rem .6rem">${esc(w.id_number||'')}</td>
     <td style="padding:.4rem .6rem">${esc(w.nickname||'')}</td>
     <td style="padding:.4rem .6rem">${esc(w.manager||'')}</td>
+    <td style="padding:.4rem .6rem">${w.rank==='manager'?'👔 מנהל':'👤 עובד'}</td>
     <td style="padding:.4rem .6rem">${esc(w.sales_target||'')}</td>
     <td style="padding:.4rem .6rem;white-space:nowrap">
       <button class="btn btn-outline" style="font-size:.75rem;padding:.15rem .45rem" onclick="editWorkerRow('${w.id}')">✏️</button>
@@ -1941,11 +1942,16 @@ function workerFieldsHtml(w) {
   const inp = (field, val, placeholder, w2='120px') =>
     `<input value="${esc(val||'')}" data-field="${field}" placeholder="${placeholder}"
       style="width:${w2};padding:.25rem .4rem;border:1px solid var(--border);border-radius:4px;font-size:.8rem;background:var(--bg);color:var(--text)">`;
+  const rank = w.rank || 'worker';
   return `
     ${inp('full_name', w.full_name, 'שם מלא', '140px')}
     ${inp('id_number', w.id_number, 'ת.ז', '90px')}
     ${inp('nickname', w.nickname, 'כינוי', '100px')}
     ${inp('manager', w.manager, 'מנהל', '120px')}
+    <select data-field="rank" style="padding:.25rem .4rem;border:1px solid var(--border);border-radius:4px;font-size:.8rem;background:var(--bg);color:var(--text)">
+      <option value="worker" ${rank==='worker'?'selected':''}>👤 עובד</option>
+      <option value="manager" ${rank==='manager'?'selected':''}>👔 מנהל</option>
+    </select>
     ${inp('sales_target', w.sales_target, 'יעד מכירות', '90px')}`;
 }
 
@@ -1974,9 +1980,11 @@ function editWorkerRow(id) {
   const tr = document.getElementById('wrow-' + id);
   if (!tr) return;
   const cells = tr.querySelectorAll('td');
+  const rankCell = cells[4].textContent.trim();
   const w = { full_name: cells[0].textContent.trim(), id_number: cells[1].textContent.trim(),
                nickname: cells[2].textContent.trim(), manager: cells[3].textContent.trim(),
-               sales_target: cells[4].textContent.trim() };
+               rank: rankCell.includes('מנהל') ? 'manager' : 'worker',
+               sales_target: cells[5].textContent.trim() };
   tr.innerHTML = `
     <td colspan="5" style="padding:.3rem .4rem">
       <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">

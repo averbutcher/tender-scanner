@@ -1340,6 +1340,7 @@ async def upload_workers(u: str = Depends(auth), file: UploadFile = File(...)):
             "כינוי": "nickname", "שם כינוי": "nickname",
             "מנהל": "manager", "שם מנהל": "manager",
             "יעד מכירות": "sales_target", "יעד": "sales_target",
+            "דרגה": "rank", "תפקיד": "rank",
         }
         workers = []
         for _, row in df.iterrows():
