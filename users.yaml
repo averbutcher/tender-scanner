@@ -9,7 +9,6 @@ credentials:
         - tender_scanner
         - shift_comparison
         - recruiter_analysis
-        - sales
     dorra:
       email: DorRa@electra-target.co.il
       name: Dor Racket
