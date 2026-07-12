@@ -269,6 +269,13 @@ details.sb-exp summary::before{content:"▶ "}
     <!-- Recruiter Analysis -->
     <div id="recruiter-app" class="hidden"></div>
 
+    <!-- Sales -->
+    <div id="sales-app" class="hidden">
+      <div class="page-eyebrow">Electra Target Tools</div>
+      <div class="page-title">💰 מכירות</div>
+      <div id="sales-content"></div>
+    </div>
+
     <!-- No access -->
     <div id="no-access-app" class="hidden">
       <div class="no-access-box">
@@ -500,6 +507,7 @@ const ALL_APPS = [
   ['tender_scanner',      '🔍', 'סריקת מכרזים'],
   ['shift_comparison',    '📊', 'השוואת משמרות'],
   ['recruiter_analysis',  '👥', 'ניתוח מגייסים'],
+  ['sales',               '💰', 'מכירות'],
 ];
 
 function renderSidebar() {
@@ -644,7 +652,7 @@ async function saveAliases() {
 // MAIN ROUTING
 // ══════════════════════════════════════════
 function renderMain() {
-  ['tender-app','shifts-app','recruiter-app','no-access-app'].forEach(id =>
+  ['tender-app','shifts-app','recruiter-app','sales-app','no-access-app'].forEach(id =>
     document.getElementById(id).classList.add('hidden'));
   const userApps = new Set(S.user.apps || []);
   if (!userApps.has(S.activeApp)) {
@@ -660,6 +668,9 @@ function renderMain() {
   } else if (S.activeApp === 'recruiter_analysis') {
     document.getElementById('recruiter-app').classList.remove('hidden');
     renderRecruiterApp();
+  } else if (S.activeApp === 'sales') {
+    document.getElementById('sales-app').classList.remove('hidden');
+    renderSalesApp();
   }
 }
 
@@ -2128,6 +2139,46 @@ function renderShiftsResult() {
         </span>
       </div>`;
     }).join('')}`;
+}
+
+// ══════════════════════════════════════════
+// SALES
+// ══════════════════════════════════════════
+let _salesFile = null;
+
+function renderSalesApp() {
+  const el = document.getElementById('sales-content');
+  el.innerHTML = `
+    <p style="font-size:.83rem;color:var(--muted);margin-bottom:1.5rem">העלה קובץ מהכספת לניתוח נתוני מכירות</p>
+    <div style="max-width:480px">
+      <div style="font-size:.82rem;font-weight:600;margin-bottom:.6rem">📂 קובץ כספת</div>
+      <div class="upload-area" id="sales-upload-area"
+           onclick="document.getElementById('sales-file').click()"
+           ondragover="event.preventDefault();this.classList.add('drag')"
+           ondragleave="this.classList.remove('drag')"
+           ondrop="handleSalesDrop(event)">
+        <input type="file" id="sales-file" accept=".xlsx,.xls" onchange="handleSalesFile(this.files[0])" style="display:none">
+        <div style="font-size:1.8rem">📂</div>
+        <span class="upload-label">לחץ או גרור קובץ Excel מהכספת</span>
+        <div id="sales-file-name" style="font-size:.8rem;color:var(--accent);margin-top:.3rem"></div>
+      </div>
+      <div id="sales-result" style="margin-top:1.2rem"></div>
+    </div>`;
+}
+
+function handleSalesFile(file) {
+  if (!file) return;
+  _salesFile = file;
+  document.getElementById('sales-file-name').textContent = `✅ ${file.name}`;
+  document.getElementById('sales-result').innerHTML =
+    `<div class="info">קובץ "${esc(file.name)}" נטען בהצלחה. ניתוח נתונים יתווסף בקרוב.</div>`;
+}
+
+function handleSalesDrop(e) {
+  e.preventDefault();
+  document.getElementById('sales-upload-area').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) handleSalesFile(file);
 }
 
 // ══════════════════════════════════════════
