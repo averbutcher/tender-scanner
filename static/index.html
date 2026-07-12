@@ -1647,6 +1647,13 @@ function renderRecruiterOverview(el){
 // ══════════════════════════════════════════
 let _shiftsFile = null;
 let _gmailToken = null;
+let _excelSource = 'upload'; // 'upload' or 'gmail'
+
+function toggleExcelSource(isGmail) {
+  _excelSource = isGmail ? 'gmail' : 'upload';
+  document.getElementById('toggle-track').style.background = isGmail ? 'var(--accent)' : '#ccc';
+  document.getElementById('toggle-thumb').style.left = isGmail ? '18px' : '2px';
+}
 
 function renderShiftsApp() {
   const el = document.getElementById('shifts-content');
@@ -1665,7 +1672,18 @@ function renderShiftsApp() {
         <textarea id="sh-msg" placeholder="הדבק כאן את הודעת הוואטסאפ..."></textarea>
       </div>
       <div>
-        <div style="font-size:.82rem;font-weight:600;margin-bottom:.4rem">📂 קובץ אקסל</div>
+        <div style="font-size:.82rem;font-weight:600;margin-bottom:.4rem;display:flex;align-items:center;gap:.7rem">
+          📂 קובץ אקסל
+          <div style="display:flex;align-items:center;gap:.35rem;font-weight:400;font-size:.78rem;color:var(--muted)">
+            <span>קובץ מועלה</span>
+            <label style="position:relative;display:inline-block;width:36px;height:20px;cursor:pointer">
+              <input type="checkbox" id="excel-source-toggle" onchange="toggleExcelSource(this.checked)" style="opacity:0;width:0;height:0">
+              <span style="position:absolute;inset:0;background:#ccc;border-radius:20px;transition:.2s" id="toggle-track"></span>
+              <span style="position:absolute;left:2px;top:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3)" id="toggle-thumb"></span>
+            </label>
+            <span>ממייל</span>
+          </div>
+        </div>
         <div class="upload-area" id="upload-area" onclick="document.getElementById('sh-file').click()"
              ondragover="event.preventDefault();this.classList.add('drag')"
              ondragleave="this.classList.remove('drag')"
@@ -1728,9 +1746,10 @@ async function fetchFromGmail() {
   try {
     const res = await api('POST', '/api/shifts/fetch-from-gmail', { date: dateFmt });
     if (res?.ok) {
-      _gmailToken = res.token;
-      _shiftsFile = null;
-      document.getElementById('file-name').textContent = `✅ ${res.filename} (ממייל)`;
+      const r = await fetch(`/api/shifts/download/${res.token}`, { credentials: 'same-origin' });
+      const blob = await r.blob();
+      const file = new File([blob], res.filename, { type: blob.type });
+      handleFile(file);
       toast(`✅ קובץ "${res.filename}" נטען ממייל`, 'success');
     }
   } catch(e) {
@@ -1804,15 +1823,12 @@ async function doCompare() {
   const el = document.getElementById('shifts-result');
   el.innerHTML = `<div class="info">⏳ משווה נתונים...</div>`;
 
-  if (!_shiftsFile && !_gmailToken) { toast('נא להעלות קובץ אקסל', 'error'); return; }
+  if (!_shiftsFile) { toast('נא להעלות קובץ אקסל', 'error'); return; }
 
   const fd = new FormData();
   fd.append('message', msg);
-  if (_gmailToken) {
-    fd.append('gmail_token', _gmailToken);
-  } else {
-    fd.append('excel', _shiftsFile);
-  }
+  fd.append('excel', _shiftsFile);
+  fd.append('source', _excelSource);
 
   try {
     const res = await api('POST', '/api/shifts/compare', fd, true);

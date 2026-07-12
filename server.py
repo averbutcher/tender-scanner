@@ -1158,24 +1158,18 @@ GMAIL_EXCEL_COLUMNS = {
 async def shifts_compare(
     u: str = Depends(auth),
     message: str = Form(...),
-    excel: UploadFile = File(None),
-    gmail_token: str = Form(None),
+    excel: UploadFile = File(...),
+    source: str = Form("upload"),
 ):
     cfg = _load_shifts_cfg(u)
 
-    # Get Excel bytes from either upload or Gmail cache
-    if gmail_token and gmail_token in _excel_cache:
-        excel_bytes = _excel_cache[gmail_token]
-        # Use clock2go column layout
-        gmail_cfg = dict(cfg)
-        gmail_cfg["excel_columns"] = GMAIL_EXCEL_COLUMNS
-        gmail_cfg["excel_has_header"] = True
-        parse_cfg = gmail_cfg
-    elif excel:
-        excel_bytes = await excel.read()
-        parse_cfg = cfg
+    excel_bytes = await excel.read()
+    if source == "gmail":
+        parse_cfg = dict(cfg)
+        parse_cfg["excel_columns"] = GMAIL_EXCEL_COLUMNS
+        parse_cfg["excel_has_header"] = True
     else:
-        raise HTTPException(400, "נא לצרף קובץ Excel או למשוך ממייל")
+        parse_cfg = cfg
 
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         tmp.write(excel_bytes)
