@@ -1647,7 +1647,7 @@ function renderRecruiterOverview(el){
 // ══════════════════════════════════════════
 let _shiftsFile = null;
 let _gmailToken = null;
-let _excelSource = 'upload'; // 'upload' or 'gmail'
+let _excelSource = 'gmail'; // 'upload' or 'gmail'
 let _shiftsTab = 'compare'; // 'compare' | 'saved'
 let _savedSort = { col: 'date', dir: 1 }; // dir: 1=asc, -1=desc
 
@@ -1695,13 +1695,13 @@ function renderShiftsApp() {
         <div style="font-size:.82rem;font-weight:600;margin-bottom:.4rem;display:flex;align-items:center;gap:.7rem">
           📂 קובץ אקסל
           <div style="display:flex;align-items:center;gap:.35rem;font-weight:400;font-size:.78rem;color:var(--muted)">
-            <span>קובץ מועלה</span>
-            <label style="position:relative;display:inline-block;width:36px;height:20px;cursor:pointer">
-              <input type="checkbox" id="excel-source-toggle" onchange="toggleExcelSource(this.checked)" style="opacity:0;width:0;height:0">
-              <span style="position:absolute;inset:0;background:#ccc;border-radius:20px;transition:.2s" id="toggle-track"></span>
-              <span style="position:absolute;left:2px;top:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3)" id="toggle-thumb"></span>
-            </label>
             <span>ממייל</span>
+            <label style="position:relative;display:inline-block;width:36px;height:20px;cursor:pointer">
+              <input type="checkbox" id="excel-source-toggle" onchange="toggleExcelSource(this.checked)" checked style="opacity:0;width:0;height:0">
+              <span style="position:absolute;inset:0;background:var(--accent);border-radius:20px;transition:.2s" id="toggle-track"></span>
+              <span style="position:absolute;left:18px;top:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3)" id="toggle-thumb"></span>
+            </label>
+            <span>קובץ מועלה</span>
           </div>
         </div>
         <div class="upload-area" id="upload-area" onclick="document.getElementById('sh-file').click()"
@@ -1786,6 +1786,41 @@ function deleteCompareRow(i) {
   renderShiftsResult();
 }
 
+let _lastCbIndex = null;
+
+function handleCbClick(e, cb) {
+  const allCbs = Array.from(document.querySelectorAll('.saved-cb'));
+  const idx = allCbs.indexOf(cb);
+  if (e.shiftKey && _lastCbIndex !== null) {
+    const from = Math.min(_lastCbIndex, idx);
+    const to   = Math.max(_lastCbIndex, idx);
+    const state = cb.checked;
+    allCbs.slice(from, to + 1).forEach(c => c.checked = state);
+  }
+  _lastCbIndex = idx;
+  updateBulkDeleteBtn();
+}
+
+function toggleAllCb(checked) {
+  document.querySelectorAll('.saved-cb').forEach(c => c.checked = checked);
+  _lastCbIndex = null;
+  updateBulkDeleteBtn();
+}
+
+function updateBulkDeleteBtn() {
+  const any = document.querySelector('.saved-cb:checked');
+  const btn = document.getElementById('bulk-delete-btn');
+  if (btn) btn.style.display = any ? '' : 'none';
+}
+
+async function bulkDeleteSaved() {
+  const ids = Array.from(document.querySelectorAll('.saved-cb:checked')).map(c => c.dataset.id);
+  if (!ids.length) return;
+  if (!confirm(`למחוק ${ids.length} שורות?`)) return;
+  await Promise.all(ids.map(id => api('DELETE', `/api/shifts/saved/${id}`)));
+  await loadSavedShifts();
+}
+
 async function saveComparison() {
   if (!S.shiftsResult?.length) return;
   const res = await api('POST', '/api/shifts/saved', S.shiftsResult);
@@ -1834,6 +1869,7 @@ function renderSavedShifts(rows) {
   };
   const th = (label, col) =>
     `<th style="padding:.4rem .6rem;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;user-select:none" onclick="sortSaved('${col}')">${label}${arrow(col)}</th>`;
+  const thCb = `<th style="padding:.4rem .6rem;border-bottom:1px solid var(--border);width:2rem"><input type="checkbox" id="cb-all" onchange="toggleAllCb(this.checked)" title="בחר הכל"></th>`;
 
   const dateFilter = document.getElementById('saved-date-filter')?.value || '';
   const nameFilter = document.getElementById('saved-name-filter')?.value || '';
@@ -1848,13 +1884,14 @@ function renderSavedShifts(rows) {
         style="padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.82rem;background:var(--bg);color:var(--text);width:180px">
       <a href="${exportUrl}" class="btn btn-outline" style="font-size:.82rem">⬇️ הורד Excel</a>
       <span style="font-size:.8rem;color:var(--muted);margin-right:auto">${rows.length} שורות</span>
+      <button class="btn btn-outline" id="bulk-delete-btn" style="font-size:.82rem;color:var(--red);display:none" onclick="bulkDeleteSaved()">🗑️ מחק נבחרים</button>
     </div>
     ${rows.length === 0 ? '<div class="info">אין נתונים שמורים</div>' : `
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:.82rem">
         <thead>
           <tr style="background:var(--surface);text-align:right">
-            ${th('סטטוס','status')}${th('תאריך','date')}${th('שם עובד','worker_name')}
+            ${thCb}${th('סטטוס','status')}${th('תאריך','date')}${th('שם עובד','worker_name')}
             ${th('מקום','workplace')}${th('התחלה','start_time')}${th('סיום','end_time')}
             ${th('שעות','hours')}${th('הערות','notes')}
             <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"></th>
@@ -1871,6 +1908,7 @@ function savedRowHtml(r, STATUS_BG, STATUS_LABEL) {
   const bg = STATUS_BG[r.status] || 'transparent';
   const label = STATUS_LABEL[r.status] || r.status || '';
   return `<tr id="row-${r.id}" style="background:${bg};border-bottom:1px solid var(--border)">
+    <td style="padding:.4rem .6rem"><input type="checkbox" class="saved-cb" data-id="${r.id}" onclick="handleCbClick(event, this)"></td>
     <td style="padding:.4rem .6rem">${label}</td>
     <td style="padding:.4rem .6rem">${esc(r.date||'')}</td>
     <td style="padding:.4rem .6rem;font-weight:600">${esc(r.worker_name||'')}</td>

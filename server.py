@@ -1373,7 +1373,15 @@ GMAIL_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
 GMAIL_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 GMAIL_REDIRECT_URI  = "https://tender-scanner.up.railway.app/auth/gmail/callback"
 GMAIL_SCOPES        = "https://www.googleapis.com/auth/gmail.readonly"
-_gmail_tokens: dict = {}  # username -> {access_token, refresh_token}
+_GMAIL_TOKENS_FILE = BASE_DIR / "data" / "shared" / "gmail_tokens.json"
+
+def _load_gmail_tokens() -> dict:
+    return _rj(_GMAIL_TOKENS_FILE, {})
+
+def _save_gmail_token(u: str, tokens: dict):
+    all_tokens = _load_gmail_tokens()
+    all_tokens[u] = tokens
+    _GMAIL_TOKENS_FILE.write_text(json.dumps(all_tokens, ensure_ascii=False, indent=2), encoding="utf-8")
 
 @app.get("/auth/gmail/connect")
 async def gmail_connect(u: str = Depends(auth)):
@@ -1404,18 +1412,18 @@ async def gmail_callback(code: str, state: str):
         headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST")
     with urllib.request.urlopen(req) as resp:
         tokens = _json.loads(resp.read())
-    _gmail_tokens[state] = tokens
+    _save_gmail_token(state, tokens)
     from fastapi.responses import HTMLResponse
     return HTMLResponse("<script>window.close();window.opener&&window.opener.postMessage('gmail_connected','*')</script>✅ Gmail מחובר! ניתן לסגור חלון זה.")
 
 @app.get("/auth/gmail/status")
 async def gmail_status(u: str = Depends(auth)):
-    return {"connected": u in _gmail_tokens}
+    return {"connected": u in _load_gmail_tokens()}
 
 @app.post("/api/shifts/fetch-from-gmail")
 async def fetch_shifts_from_gmail(body: dict = {}, u: str = Depends(auth)):
     import urllib.request, urllib.parse, json as _json, base64
-    tokens = _gmail_tokens.get(u)
+    tokens = _load_gmail_tokens().get(u)
     if not tokens:
         raise HTTPException(400, "Gmail לא מחובר")
     access_token = tokens.get("access_token", "")
