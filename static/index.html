@@ -1646,6 +1646,7 @@ function renderRecruiterOverview(el){
 // SHIFT COMPARISON
 // ══════════════════════════════════════════
 let _shiftsFile = null;
+let _gmailToken = null;
 
 function renderShiftsApp() {
   const el = document.getElementById('shifts-content');
@@ -1727,10 +1728,9 @@ async function fetchFromGmail() {
   try {
     const res = await api('POST', '/api/shifts/fetch-from-gmail', { date: dateFmt });
     if (res?.ok) {
-      const r = await fetch(`/api/shifts/download/${res.token}`, { credentials: 'same-origin' });
-      const blob = await r.blob();
-      const file = new File([blob], res.filename, { type: blob.type });
-      handleFile(file);
+      _gmailToken = res.token;
+      _shiftsFile = null;
+      document.getElementById('file-name').textContent = `✅ ${res.filename} (ממייל)`;
       toast(`✅ קובץ "${res.filename}" נטען ממייל`, 'success');
     }
   } catch(e) {
@@ -1744,6 +1744,7 @@ async function fetchFromGmail() {
 function handleFile(file) {
   if (!file) return;
   _shiftsFile = file;
+  _gmailToken = null;
   document.getElementById('file-name').textContent = `✅ ${file.name}`;
 }
 
@@ -1775,7 +1776,7 @@ function findSuspiciousLines(text) {
 async function runCompare() {
   const msg = document.getElementById('sh-msg').value.trim();
   if (!msg) { toast('נא להדביק הודעת וואטסאפ', 'error'); return; }
-  if (!_shiftsFile) { toast('נא להעלות קובץ אקסל', 'error'); return; }
+  if (!_shiftsFile && !_gmailToken) { toast('נא להעלות קובץ אקסל', 'error'); return; }
 
   const suspicious = findSuspiciousLines(msg);
   if (suspicious.length > 0) {
@@ -1803,9 +1804,15 @@ async function doCompare() {
   const el = document.getElementById('shifts-result');
   el.innerHTML = `<div class="info">⏳ משווה נתונים...</div>`;
 
+  if (!_shiftsFile && !_gmailToken) { toast('נא להעלות קובץ אקסל', 'error'); return; }
+
   const fd = new FormData();
   fd.append('message', msg);
-  fd.append('excel', _shiftsFile);
+  if (_gmailToken) {
+    fd.append('gmail_token', _gmailToken);
+  } else {
+    fd.append('excel', _shiftsFile);
+  }
 
   try {
     const res = await api('POST', '/api/shifts/compare', fd, true);

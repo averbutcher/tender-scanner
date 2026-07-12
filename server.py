@@ -1147,19 +1147,42 @@ async def save_shifts_config(body: dict, u: str = Depends(auth)):
 async def shifts_validate(_: str = Depends(auth), message: str = Form(...)):
     return {"suspicious": find_suspicious_lines(message)}
 
+GMAIL_EXCEL_COLUMNS = {
+    "date":        "A",
+    "worker_name": "D",
+    "start_time":  "J",
+    "end_time":    "P",
+}
+
 @app.post("/api/shifts/compare")
 async def shifts_compare(
     u: str = Depends(auth),
     message: str = Form(...),
-    excel: UploadFile = File(...),
+    excel: UploadFile = File(None),
+    gmail_token: str = Form(None),
 ):
     cfg = _load_shifts_cfg(u)
+
+    # Get Excel bytes from either upload or Gmail cache
+    if gmail_token and gmail_token in _excel_cache:
+        excel_bytes = _excel_cache[gmail_token]
+        # Use clock2go column layout
+        gmail_cfg = dict(cfg)
+        gmail_cfg["excel_columns"] = GMAIL_EXCEL_COLUMNS
+        gmail_cfg["excel_has_header"] = True
+        parse_cfg = gmail_cfg
+    elif excel:
+        excel_bytes = await excel.read()
+        parse_cfg = cfg
+    else:
+        raise HTTPException(400, "נא לצרף קובץ Excel או למשוך ממייל")
+
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-        tmp.write(await excel.read())
+        tmp.write(excel_bytes)
         tmp_path = Path(tmp.name)
     try:
         msg_entries = parse_message(message)
-        excel_entries = parse_excel(str(tmp_path), cfg)
+        excel_entries = parse_excel(str(tmp_path), parse_cfg)
         results = compare(msg_entries, excel_entries, cfg)
 
         out_path = Path(tempfile.mktemp(suffix=".xlsx"))
