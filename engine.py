@@ -381,6 +381,44 @@ def _compare_day(msg_entries: list, excel_entries: list, cfg: dict) -> list[dict
         ex_rows = _filter_excel_rows(excel_by_key.get(key, []))
         ms_rows = msg_by_key.get(key, [])
 
+        # ── 1 message row, multiple Excel rows → sum Excel hours ────────────
+        if len(ms_rows) == 1 and len(ex_rows) > 1:
+            mr = ms_rows[0]
+            mh = mr["hours"] or 0
+            total_xl_hours = sum(r["hours"] or 0 for r in ex_rows if r["hours"] is not None)
+            # Use earliest start and latest end from the Excel rows
+            starts = [r["start_time"] for r in ex_rows if r["start_time"] is not None]
+            ends   = [r["end_time"]   for r in ex_rows if r["end_time"]   is not None]
+            start_t = min(starts) if starts else None
+            end_t   = max(ends)   if ends   else None
+            # Representative Excel row for date/name
+            er = ex_rows[0]
+            diff_min = abs(total_xl_hours - mh) * 60
+            if diff_min <= threshold_min:
+                output.append({
+                    "date":        er["date"],
+                    "worker_name": er["worker_name"],
+                    "workplace":   mr["workplace"],
+                    "start_time":  start_t,
+                    "end_time":    end_t,
+                    "sales":       mr["sales"],
+                    "notes":       "הכל תקין",
+                    "status":      "ok",
+                })
+            else:
+                output.append({
+                    "date":        er["date"],
+                    "worker_name": er["worker_name"],
+                    "workplace":   mr["workplace"],
+                    "start_time":  start_t,
+                    "end_time":    end_t,
+                    "sales":       mr["sales"],
+                    "notes":       f"פער של {int(diff_min)} דקות",
+                    "status":      "gap",
+                })
+            continue
+        # ────────────────────────────────────────────────────────────────────
+
         # ── Multi-workplace: several message rows but one Excel row ──────────
         if len(ms_rows) > 1 and len(ex_rows) == 1:
             er               = ex_rows[0]
