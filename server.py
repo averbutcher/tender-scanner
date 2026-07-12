@@ -1233,8 +1233,9 @@ def _save_saved_shifts(u: str, rows: list):
     _saved_shifts_path(u).write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
 
 @app.post("/api/shifts/saved")
-async def save_shifts(body: list, u: str = Depends(auth)):
+async def save_shifts(request: Request, u: str = Depends(auth)):
     import uuid as _uuid
+    body = await request.json()
     existing = _load_saved_shifts(u)
     for row in body:
         row["id"] = str(_uuid.uuid4())
@@ -1252,24 +1253,6 @@ async def get_saved_shifts(u: str = Depends(auth), date: str = Query(None), name
         rows = [r for r in rows if nl in str(r.get("worker_name", "")).lower()]
     rows.sort(key=lambda r: str(r.get("date", "")))
     return rows
-
-@app.put("/api/shifts/saved/{row_id}")
-async def update_saved_shift(row_id: str, body: dict, u: str = Depends(auth)):
-    rows = _load_saved_shifts(u)
-    for i, r in enumerate(rows):
-        if r.get("id") == row_id:
-            body["id"] = row_id
-            rows[i] = body
-            _save_saved_shifts(u, rows)
-            return {"ok": True}
-    raise HTTPException(404, "שורה לא נמצאה")
-
-@app.delete("/api/shifts/saved/{row_id}")
-async def delete_saved_shift(row_id: str, u: str = Depends(auth)):
-    rows = _load_saved_shifts(u)
-    rows = [r for r in rows if r.get("id") != row_id]
-    _save_saved_shifts(u, rows)
-    return {"ok": True}
 
 @app.get("/api/shifts/saved/export")
 async def export_saved_shifts(u: str = Depends(auth), date: str = Query(None), name: str = Query(None)):
@@ -1308,6 +1291,24 @@ async def export_saved_shifts(u: str = Depends(auth), date: str = Query(None), n
     return Response(content=data,
                     media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": "attachment; filename=worker_hours.xlsx"})
+
+@app.put("/api/shifts/saved/{row_id}")
+async def update_saved_shift(row_id: str, body: dict, u: str = Depends(auth)):
+    rows = _load_saved_shifts(u)
+    for i, r in enumerate(rows):
+        if r.get("id") == row_id:
+            body["id"] = row_id
+            rows[i] = body
+            _save_saved_shifts(u, rows)
+            return {"ok": True}
+    raise HTTPException(404, "שורה לא נמצאה")
+
+@app.delete("/api/shifts/saved/{row_id}")
+async def delete_saved_shift(row_id: str, u: str = Depends(auth)):
+    rows = _load_saved_shifts(u)
+    rows = [r for r in rows if r.get("id") != row_id]
+    _save_saved_shifts(u, rows)
+    return {"ok": True}
 
 
 # ── Recruiter Analysis ────────────────────────────────────────────────────────

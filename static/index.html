@@ -1666,8 +1666,8 @@ function renderShiftsApp() {
   const el = document.getElementById('shifts-content');
   const tabBar = `
     <div class="tabs" style="margin-bottom:1.2rem">
-      <button class="tab-btn ${_shiftsTab==='compare'?'active':''}" onclick="switchShiftsTab('compare')">⚡ השוואה</button>
-      <button class="tab-btn ${_shiftsTab==='saved'?'active':''}" onclick="switchShiftsTab('saved')">📋 שעות עובדים</button>
+      <div class="tab ${_shiftsTab==='compare'?'active':''}" onclick="switchShiftsTab('compare')">⚡ השוואה</div>
+      <div class="tab ${_shiftsTab==='saved'?'active':''}" onclick="switchShiftsTab('saved')">📋 שעות עובדים</div>
     </div>`;
 
   if (_shiftsTab === 'saved') {
@@ -1745,6 +1745,44 @@ function connectGmail() {
       toast('Gmail מחובר בהצלחה!', 'success');
     }
   }, { once: true });
+}
+
+function editCompareRow(i) {
+  const row = S.shiftsResult[i];
+  const STATUS_LABEL = {ok:'✅ תקין', gap:'⚠️ פער', missing_msg:'🟠 חסר בהודעה', missing_excel:'🔴 חסר באקסל'};
+  const STATUS_BG = {ok:'var(--green-bg)', gap:'var(--yellow-bg)', missing_msg:'var(--orange-bg)', missing_excel:'var(--red-bg)'};
+  const el = document.getElementById('cmp-row-' + i);
+  const inp = (field, val, w='90px') =>
+    `<input value="${esc(val||'')}" data-field="${field}" style="width:${w};padding:.2rem .3rem;border:1px solid var(--border);border-radius:4px;font-size:.8rem;background:var(--bg);color:var(--text)">`;
+  el.innerHTML = `
+    <select data-field="status" style="font-size:.8rem;padding:.2rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)">
+      <option value="ok">✅ תקין</option><option value="gap">⚠️ פער</option>
+      <option value="missing_msg">🟠 חסר בהודעה</option><option value="missing_excel">🔴 חסר באקסל</option>
+    </select>
+    ${inp('worker_name', row.worker_name, '110px')}
+    ${inp('workplace', row.workplace, '90px')}
+    ${inp('date', row.date, '75px')}
+    ${inp('start_time', row.start_time, '55px')}
+    ${inp('end_time', row.end_time, '55px')}
+    ${inp('notes', row.notes, '120px')}
+    <span style="margin-right:auto;display:flex;gap:.3rem">
+      <button class="btn btn-primary" style="font-size:.75rem;padding:.15rem .5rem" onclick="saveCompareRow(${i})">שמור</button>
+      <button class="btn btn-outline" style="font-size:.75rem;padding:.15rem .5rem" onclick="renderShiftsResult()">ביטול</button>
+    </span>`;
+  el.querySelector('select[data-field="status"]').value = row.status || 'ok';
+}
+
+function saveCompareRow(i) {
+  const el = document.getElementById('cmp-row-' + i);
+  const updated = { ...S.shiftsResult[i] };
+  el.querySelectorAll('[data-field]').forEach(inp => { updated[inp.dataset.field] = inp.value; });
+  S.shiftsResult[i] = updated;
+  renderShiftsResult();
+}
+
+function deleteCompareRow(i) {
+  S.shiftsResult.splice(i, 1);
+  renderShiftsResult();
 }
 
 async function saveComparison() {
@@ -2014,17 +2052,21 @@ function renderShiftsResult() {
       <button class="btn btn-outline" onclick="saveComparison()">💾 שמור השוואה</button>
     </div>
     <hr class="divider">
-    ${r.map(row => {
+    ${r.map((row, i) => {
       const bg = STATUS_BG[row.status] || '#fff';
       const label = STATUS_LABEL[row.status] || row.status;
       const time = row.start_time ? `${row.start_time}–${row.end_time}` : '';
-      return `<div class="result-row" style="background:${bg}">
+      return `<div class="result-row" id="cmp-row-${i}" style="background:${bg};display:flex;align-items:center;gap:.5rem">
         <span class="r-status">${label}</span>
         <span class="r-worker">${esc(row.worker_name)}</span>
         ${row.workplace?`<span style="color:var(--muted)">${esc(row.workplace)}</span>`:''}
         ${row.date?`<span style="color:var(--muted)">${esc(row.date)}</span>`:''}
         ${time?`<span style="color:var(--muted)">${esc(time)}</span>`:''}
         ${row.notes?`<span class="r-notes">${esc(row.notes)}</span>`:''}
+        <span style="margin-right:auto;display:flex;gap:.3rem">
+          <button class="btn btn-outline" style="font-size:.72rem;padding:.1rem .4rem" onclick="editCompareRow(${i})">✏️</button>
+          <button class="btn btn-outline" style="font-size:.72rem;padding:.1rem .4rem;color:var(--red)" onclick="deleteCompareRow(${i})">🗑️</button>
+        </span>
       </div>`;
     }).join('')}`;
 }
