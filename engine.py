@@ -573,6 +573,10 @@ def _compare_day(msg_entries: list, excel_entries: list, cfg: dict) -> list[dict
                     "status":      "missing_excel",
                 })
 
+    for row in output:
+        if row.get("hours") is None and row.get("start_time") and row.get("end_time"):
+            row["hours"] = hours_between(row["start_time"], row["end_time"])
+
     return output
 
 
