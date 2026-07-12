@@ -1649,6 +1649,7 @@ let _shiftsFile = null;
 let _gmailToken = null;
 let _excelSource = 'upload'; // 'upload' or 'gmail'
 let _shiftsTab = 'compare'; // 'compare' | 'saved'
+let _savedSort = { col: 'date', dir: 1 }; // dir: 1=asc, -1=desc
 
 function toggleExcelSource(isGmail) {
   _excelSource = isGmail ? 'gmail' : 'upload';
@@ -1803,22 +1804,47 @@ async function loadSavedShifts() {
   renderSavedShifts(rows || []);
 }
 
+let _savedRows = []; // cache for client-side sort
+
+function sortSaved(col) {
+  if (_savedSort.col === col) _savedSort.dir *= -1;
+  else { _savedSort.col = col; _savedSort.dir = 1; }
+  renderSavedShifts(_savedRows);
+}
+
 function renderSavedShifts(rows) {
+  _savedRows = rows;
   const el = document.getElementById('saved-shifts-content');
   if (!el) return;
 
   const STATUS_BG    = {ok:'var(--green-bg)', gap:'var(--yellow-bg)', missing_msg:'var(--orange-bg)', missing_excel:'var(--red-bg)'};
   const STATUS_LABEL = {ok:'✅ תקין', gap:'⚠️ פער', missing_msg:'🟠 חסר בהודעה', missing_excel:'🔴 חסר באקסל'};
 
-  const exportUrl = '/api/shifts/saved/export' +
-    (document.getElementById('saved-date-filter')?.value ? `?date=${encodeURIComponent(document.getElementById('saved-date-filter').value)}` : '') +
-    (document.getElementById('saved-name-filter')?.value ? `${document.getElementById('saved-date-filter')?.value?'&':'?'}name=${encodeURIComponent(document.getElementById('saved-name-filter').value)}` : '');
+  // Sort
+  const sorted = [...rows].sort((a, b) => {
+    let va = String(a[_savedSort.col] ?? '');
+    let vb = String(b[_savedSort.col] ?? '');
+    if (_savedSort.col === 'hours') { va = parseFloat(a.hours)||0; vb = parseFloat(b.hours)||0; return (va-vb)*_savedSort.dir; }
+    return va.localeCompare(vb, 'he') * _savedSort.dir;
+  });
+
+  const arrow = col => {
+    if (_savedSort.col !== col) return `<span style="color:var(--border);font-size:.7rem;margin-right:.2rem">⇅</span>`;
+    return `<span style="font-size:.7rem;margin-right:.2rem">${_savedSort.dir===1?'↑':'↓'}</span>`;
+  };
+  const th = (label, col) =>
+    `<th style="padding:.4rem .6rem;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;user-select:none" onclick="sortSaved('${col}')">${label}${arrow(col)}</th>`;
+
+  const dateFilter = document.getElementById('saved-date-filter')?.value || '';
+  const nameFilter = document.getElementById('saved-name-filter')?.value || '';
+  const exportParams = [dateFilter&&`date=${encodeURIComponent(dateFilter)}`, nameFilter&&`name=${encodeURIComponent(nameFilter)}`].filter(Boolean).join('&');
+  const exportUrl = '/api/shifts/saved/export' + (exportParams ? '?' + exportParams : '');
 
   el.innerHTML = `
     <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
-      <input id="saved-date-filter" type="text" placeholder="סנן לפי תאריך (לדוג׳ 15/06)" oninput="loadSavedShifts()"
+      <input id="saved-date-filter" type="text" placeholder="סנן לפי תאריך (לדוג׳ 15/06)" oninput="loadSavedShifts()" value="${esc(dateFilter)}"
         style="padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.82rem;background:var(--bg);color:var(--text);width:160px">
-      <input id="saved-name-filter" type="text" placeholder="סנן לפי שם עובד" oninput="loadSavedShifts()"
+      <input id="saved-name-filter" type="text" placeholder="סנן לפי שם עובד" oninput="loadSavedShifts()" value="${esc(nameFilter)}"
         style="padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.82rem;background:var(--bg);color:var(--text);width:180px">
       <a href="${exportUrl}" class="btn btn-outline" style="font-size:.82rem">⬇️ הורד Excel</a>
       <span style="font-size:.8rem;color:var(--muted);margin-right:auto">${rows.length} שורות</span>
@@ -1828,19 +1854,14 @@ function renderSavedShifts(rows) {
       <table style="width:100%;border-collapse:collapse;font-size:.82rem">
         <thead>
           <tr style="background:var(--surface);text-align:right">
-            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">סטטוס</th>
-            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">תאריך</th>
-            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">שם עובד</th>
-            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">מקום</th>
-            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">התחלה</th>
-            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">סיום</th>
-            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">שעות</th>
-            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">הערות</th>
+            ${th('סטטוס','status')}${th('תאריך','date')}${th('שם עובד','worker_name')}
+            ${th('מקום','workplace')}${th('התחלה','start_time')}${th('סיום','end_time')}
+            ${th('שעות','hours')}${th('הערות','notes')}
             <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"></th>
           </tr>
         </thead>
         <tbody id="saved-tbody">
-          ${rows.map(r => savedRowHtml(r, STATUS_BG, STATUS_LABEL)).join('')}
+          ${sorted.map(r => savedRowHtml(r, STATUS_BG, STATUS_LABEL)).join('')}
         </tbody>
       </table>
     </div>`}`;
