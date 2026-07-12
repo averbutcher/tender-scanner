@@ -1201,6 +1201,7 @@ async def shifts_compare(
                     "date": _f(r.get("date")),
                     "start_time": _f(r.get("start_time")),
                     "end_time": _f(r.get("end_time")),
+                    "hours": round(r["hours"], 2) if r.get("hours") is not None else None,
                     "sales": str(r.get("sales", "")) if r.get("sales") else "",
                     "notes": r.get("notes", ""),
                 }
