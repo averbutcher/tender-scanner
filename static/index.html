@@ -1648,6 +1648,7 @@ function renderRecruiterOverview(el){
 let _shiftsFile = null;
 let _gmailToken = null;
 let _excelSource = 'upload'; // 'upload' or 'gmail'
+let _shiftsTab = 'compare'; // 'compare' | 'saved'
 
 function toggleExcelSource(isGmail) {
   _excelSource = isGmail ? 'gmail' : 'upload';
@@ -1655,9 +1656,27 @@ function toggleExcelSource(isGmail) {
   document.getElementById('toggle-thumb').style.left = isGmail ? '18px' : '2px';
 }
 
+function switchShiftsTab(tab) {
+  _shiftsTab = tab;
+  renderShiftsApp();
+  if (tab === 'saved') loadSavedShifts();
+}
+
 function renderShiftsApp() {
   const el = document.getElementById('shifts-content');
-  el.innerHTML = `
+  const tabBar = `
+    <div class="tabs" style="margin-bottom:1.2rem">
+      <button class="tab-btn ${_shiftsTab==='compare'?'active':''}" onclick="switchShiftsTab('compare')">⚡ השוואה</button>
+      <button class="tab-btn ${_shiftsTab==='saved'?'active':''}" onclick="switchShiftsTab('saved')">📋 שעות עובדים</button>
+    </div>`;
+
+  if (_shiftsTab === 'saved') {
+    el.innerHTML = tabBar + `<div id="saved-shifts-content"><div class="info">טוען...</div></div>`;
+    loadSavedShifts();
+    return;
+  }
+
+  el.innerHTML = tabBar + `
     <p style="font-size:.83rem;color:var(--muted);margin-bottom:1.2rem">הדבק הודעת וואטסאפ ועלה קובץ אקסל להשוואת משמרות</p>
     <div id="gmail-bar" style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem;padding:.6rem .8rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)">
       <span style="font-size:.85rem;font-weight:600">📧 Gmail</span>
@@ -1726,6 +1745,138 @@ function connectGmail() {
       toast('Gmail מחובר בהצלחה!', 'success');
     }
   }, { once: true });
+}
+
+async function saveComparison() {
+  if (!S.shiftsResult?.length) return;
+  const res = await api('POST', '/api/shifts/saved', S.shiftsResult);
+  if (res?.ok) toast(`✅ נשמרו ${res.saved} שורות`, 'success');
+}
+
+async function loadSavedShifts() {
+  const dateFilter = document.getElementById('saved-date-filter')?.value || '';
+  const nameFilter = document.getElementById('saved-name-filter')?.value || '';
+  let url = '/api/shifts/saved';
+  const params = [];
+  if (dateFilter) params.push(`date=${encodeURIComponent(dateFilter)}`);
+  if (nameFilter) params.push(`name=${encodeURIComponent(nameFilter)}`);
+  if (params.length) url += '?' + params.join('&');
+  const rows = await GET(url);
+  renderSavedShifts(rows || []);
+}
+
+function renderSavedShifts(rows) {
+  const el = document.getElementById('saved-shifts-content');
+  if (!el) return;
+
+  const STATUS_BG    = {ok:'var(--green-bg)', gap:'var(--yellow-bg)', missing_msg:'var(--orange-bg)', missing_excel:'var(--red-bg)'};
+  const STATUS_LABEL = {ok:'✅ תקין', gap:'⚠️ פער', missing_msg:'🟠 חסר בהודעה', missing_excel:'🔴 חסר באקסל'};
+
+  const exportUrl = '/api/shifts/saved/export' +
+    (document.getElementById('saved-date-filter')?.value ? `?date=${encodeURIComponent(document.getElementById('saved-date-filter').value)}` : '') +
+    (document.getElementById('saved-name-filter')?.value ? `${document.getElementById('saved-date-filter')?.value?'&':'?'}name=${encodeURIComponent(document.getElementById('saved-name-filter').value)}` : '');
+
+  el.innerHTML = `
+    <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+      <input id="saved-date-filter" type="text" placeholder="סנן לפי תאריך (לדוג׳ 15/06)" oninput="loadSavedShifts()"
+        style="padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.82rem;background:var(--bg);color:var(--text);width:160px">
+      <input id="saved-name-filter" type="text" placeholder="סנן לפי שם עובד" oninput="loadSavedShifts()"
+        style="padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.82rem;background:var(--bg);color:var(--text);width:180px">
+      <a href="${exportUrl}" class="btn btn-outline" style="font-size:.82rem">⬇️ הורד Excel</a>
+      <span style="font-size:.8rem;color:var(--muted);margin-right:auto">${rows.length} שורות</span>
+    </div>
+    ${rows.length === 0 ? '<div class="info">אין נתונים שמורים</div>' : `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+        <thead>
+          <tr style="background:var(--surface);text-align:right">
+            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">סטטוס</th>
+            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">תאריך</th>
+            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">שם עובד</th>
+            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">מקום</th>
+            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">התחלה</th>
+            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">סיום</th>
+            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">שעות</th>
+            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">הערות</th>
+            <th style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"></th>
+          </tr>
+        </thead>
+        <tbody id="saved-tbody">
+          ${rows.map(r => savedRowHtml(r, STATUS_BG, STATUS_LABEL)).join('')}
+        </tbody>
+      </table>
+    </div>`}`;
+}
+
+function savedRowHtml(r, STATUS_BG, STATUS_LABEL) {
+  const bg = STATUS_BG[r.status] || 'transparent';
+  const label = STATUS_LABEL[r.status] || r.status || '';
+  return `<tr id="row-${r.id}" style="background:${bg};border-bottom:1px solid var(--border)">
+    <td style="padding:.4rem .6rem">${label}</td>
+    <td style="padding:.4rem .6rem">${esc(r.date||'')}</td>
+    <td style="padding:.4rem .6rem;font-weight:600">${esc(r.worker_name||'')}</td>
+    <td style="padding:.4rem .6rem">${esc(r.workplace||'')}</td>
+    <td style="padding:.4rem .6rem">${esc(r.start_time||'')}</td>
+    <td style="padding:.4rem .6rem">${esc(r.end_time||'')}</td>
+    <td style="padding:.4rem .6rem">${r.hours!=null?Number(r.hours).toFixed(1):''}</td>
+    <td style="padding:.4rem .6rem;color:var(--muted)">${esc(r.notes||'')}</td>
+    <td style="padding:.4rem .6rem;white-space:nowrap">
+      <button class="btn btn-outline" style="font-size:.75rem;padding:.15rem .45rem" onclick="editSavedRow('${r.id}')">✏️</button>
+      <button class="btn btn-outline" style="font-size:.75rem;padding:.15rem .45rem;color:var(--red)" onclick="deleteSavedRow('${r.id}')">🗑️</button>
+    </td>
+  </tr>`;
+}
+
+function editSavedRow(id) {
+  const tr = document.getElementById('row-' + id);
+  if (!tr) return;
+  const cells = tr.querySelectorAll('td');
+  const vals = {
+    status:      tr.dataset.status  || cells[0].textContent.trim(),
+    date:        cells[1].textContent.trim(),
+    worker_name: cells[2].textContent.trim(),
+    workplace:   cells[3].textContent.trim(),
+    start_time:  cells[4].textContent.trim(),
+    end_time:    cells[5].textContent.trim(),
+    hours:       cells[6].textContent.trim(),
+    notes:       cells[7].textContent.trim(),
+  };
+  const inp = (name, val, w='90px') =>
+    `<input value="${esc(val)}" data-field="${name}" style="width:${w};padding:.2rem .3rem;border:1px solid var(--border);border-radius:4px;font-size:.8rem;background:var(--bg);color:var(--text)">`;
+  tr.innerHTML = `
+    <td style="padding:.3rem .4rem"><select data-field="status" style="font-size:.8rem;padding:.2rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)">
+      <option value="ok">✅ תקין</option>
+      <option value="gap">⚠️ פער</option>
+      <option value="missing_msg">🟠 חסר בהודעה</option>
+      <option value="missing_excel">🔴 חסר באקסל</option>
+    </select></td>
+    <td style="padding:.3rem .4rem">${inp('date', vals.date, '80px')}</td>
+    <td style="padding:.3rem .4rem">${inp('worker_name', vals.worker_name, '110px')}</td>
+    <td style="padding:.3rem .4rem">${inp('workplace', vals.workplace, '90px')}</td>
+    <td style="padding:.3rem .4rem">${inp('start_time', vals.start_time, '60px')}</td>
+    <td style="padding:.3rem .4rem">${inp('end_time', vals.end_time, '60px')}</td>
+    <td style="padding:.3rem .4rem">${inp('hours', vals.hours, '50px')}</td>
+    <td style="padding:.3rem .4rem">${inp('notes', vals.notes, '120px')}</td>
+    <td style="padding:.3rem .4rem;white-space:nowrap">
+      <button class="btn btn-primary" style="font-size:.75rem;padding:.15rem .5rem" onclick="saveSavedRow('${id}')">שמור</button>
+      <button class="btn btn-outline" style="font-size:.75rem;padding:.15rem .5rem" onclick="loadSavedShifts()">ביטול</button>
+    </td>`;
+  tr.querySelector('select[data-field="status"]').value = Object.keys({ok:1,gap:1,missing_msg:1,missing_excel:1}).find(k => cells[0].textContent.includes(k==='ok'?'תקין':k==='gap'?'פער':k==='missing_msg'?'חסר בהודעה':'חסר באקסל')) || 'ok';
+}
+
+async function saveSavedRow(id) {
+  const tr = document.getElementById('row-' + id);
+  const data = { id };
+  tr.querySelectorAll('[data-field]').forEach(el => { data[el.dataset.field] = el.value; });
+  data.hours = parseFloat(data.hours) || null;
+  await api('PUT', `/api/shifts/saved/${id}`, data);
+  await loadSavedShifts();
+}
+
+async function deleteSavedRow(id) {
+  if (!confirm('למחוק שורה זו?')) return;
+  await api('DELETE', `/api/shifts/saved/${id}`);
+  await loadSavedShifts();
 }
 
 async function fetchFromGmail() {
@@ -1858,8 +2009,9 @@ function renderShiftsResult() {
       <div class="status-card" style="background:var(--orange-bg)"><div class="count" style="color:var(--orange)">${counts.missing_msg||0}</div><div class="label">חסר בהודעה</div></div>
       <div class="status-card" style="background:var(--red-bg)"><div class="count" style="color:var(--red)">${counts.missing_excel||0}</div><div class="label">חסר באקסל</div></div>
     </div>
-    <div style="margin-bottom:1rem">
+    <div style="margin-bottom:1rem;display:flex;gap:.6rem;align-items:center">
       <a href="/api/shifts/download/${S.shiftsToken}" class="btn btn-primary">⬇️ הורד Excel</a>
+      <button class="btn btn-outline" onclick="saveComparison()">💾 שמור השוואה</button>
     </div>
     <hr class="divider">
     ${r.map(row => {

@@ -1221,6 +1221,95 @@ async def shifts_download(token: str, _: str = Depends(auth)):
                     headers={"Content-Disposition": "attachment; filename=comparison.xlsx"})
 
 
+# ── Saved Shifts ─────────────────────────────────────────────────────────────
+
+def _saved_shifts_path(u: str) -> Path:
+    return _udir(u) / "saved_shifts.json"
+
+def _load_saved_shifts(u: str) -> list:
+    return _rj(_saved_shifts_path(u), [])
+
+def _save_saved_shifts(u: str, rows: list):
+    _saved_shifts_path(u).write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+
+@app.post("/api/shifts/saved")
+async def save_shifts(body: list, u: str = Depends(auth)):
+    import uuid as _uuid
+    existing = _load_saved_shifts(u)
+    for row in body:
+        row["id"] = str(_uuid.uuid4())
+    existing.extend(body)
+    _save_saved_shifts(u, existing)
+    return {"ok": True, "saved": len(body)}
+
+@app.get("/api/shifts/saved")
+async def get_saved_shifts(u: str = Depends(auth), date: str = Query(None), name: str = Query(None)):
+    rows = _load_saved_shifts(u)
+    if date:
+        rows = [r for r in rows if date in str(r.get("date", ""))]
+    if name:
+        nl = name.lower()
+        rows = [r for r in rows if nl in str(r.get("worker_name", "")).lower()]
+    rows.sort(key=lambda r: str(r.get("date", "")))
+    return rows
+
+@app.put("/api/shifts/saved/{row_id}")
+async def update_saved_shift(row_id: str, body: dict, u: str = Depends(auth)):
+    rows = _load_saved_shifts(u)
+    for i, r in enumerate(rows):
+        if r.get("id") == row_id:
+            body["id"] = row_id
+            rows[i] = body
+            _save_saved_shifts(u, rows)
+            return {"ok": True}
+    raise HTTPException(404, "שורה לא נמצאה")
+
+@app.delete("/api/shifts/saved/{row_id}")
+async def delete_saved_shift(row_id: str, u: str = Depends(auth)):
+    rows = _load_saved_shifts(u)
+    rows = [r for r in rows if r.get("id") != row_id]
+    _save_saved_shifts(u, rows)
+    return {"ok": True}
+
+@app.get("/api/shifts/saved/export")
+async def export_saved_shifts(u: str = Depends(auth), date: str = Query(None), name: str = Query(None)):
+    rows = _load_saved_shifts(u)
+    if date:
+        rows = [r for r in rows if date in str(r.get("date", ""))]
+    if name:
+        nl = name.lower()
+        rows = [r for r in rows if nl in str(r.get("worker_name", "")).lower()]
+    rows.sort(key=lambda r: str(r.get("date", "")))
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    STATUS_COLORS = {"ok": "C6EFCE", "gap": "FFEB9C", "missing_msg": "FFCC99", "missing_excel": "FFC7CE"}
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "שעות עובדים"
+    ws.sheet_view.rightToLeft = True
+    headers = ["תאריך", "שם עובד", "מקום עבודה", "שעת התחלה", "שעת סיום", "שעות", "מכירות", "הערות", "סטטוס"]
+    for ci, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=ci, value=h)
+        c.font = Font(bold=True)
+        c.fill = PatternFill("solid", start_color="D9D9D9")
+    for ri, row in enumerate(rows, 2):
+        vals = [row.get("date",""), row.get("worker_name",""), row.get("workplace",""),
+                row.get("start_time",""), row.get("end_time",""), row.get("hours",""),
+                row.get("sales",""), row.get("notes",""), row.get("status","")]
+        color = STATUS_COLORS.get(row.get("status",""), "FFFFFF")
+        for ci, v in enumerate(vals, 1):
+            c = ws.cell(row=ri, column=ci, value=v)
+            c.fill = PatternFill("solid", start_color=color)
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        wb.save(tmp.name)
+        data = Path(tmp.name).read_bytes()
+    return Response(content=data,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": "attachment; filename=worker_hours.xlsx"})
+
+
 # ── Recruiter Analysis ────────────────────────────────────────────────────────
 
 RECRUITER_CONFIG_FILE = BASE_DIR / "data" / "shared" / "recruiter_config.json"
