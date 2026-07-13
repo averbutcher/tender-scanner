@@ -1326,6 +1326,7 @@ def _save_workers(u: str, workers: list):
 @app.post("/api/workers/upload")
 async def upload_workers(u: str = Depends(auth), file: UploadFile = File(...)):
     import uuid as _uuid
+    import pandas as pd
     data = await file.read()
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         tmp.write(data)
