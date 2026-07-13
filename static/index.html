@@ -1624,6 +1624,7 @@ function renderShiftsApp() {
       <div class="tab ${_shiftsTab==='saved'?'active':''}" onclick="switchShiftsTab('saved')">📋 שעות עובדים</div>
       <div class="tab ${_shiftsTab==='sales'?'active':''}" onclick="switchShiftsTab('sales')">💰 מכירות</div>
       <div class="tab ${_shiftsTab==='workers'?'active':''}" onclick="switchShiftsTab('workers')">👷 עובדים</div>
+      <div class="tab ${_shiftsTab==='report'?'active':''}" onclick="switchShiftsTab('report')">📊 דוח מלא</div>
     </div>`;
 
   if (_shiftsTab === 'saved') {
@@ -1653,8 +1654,14 @@ function renderShiftsApp() {
           <div id="sales-file-status" style="font-size:.8rem;color:var(--accent);margin-top:.3rem"></div>
         </div>
       </div>
-      <div id="sales-table-wrap"></div>`;
-    loadSales();
+      <div id="sales-table-wrap"><div class="info">טוען...</div></div>`;
+    setTimeout(loadSales, 0);
+    return;
+  }
+
+  if (_shiftsTab === 'report') {
+    el.innerHTML = tabBar + `<div id="report-content"><div class="info">טוען...</div></div>`;
+    setTimeout(loadFullReport, 0);
     return;
   }
 
@@ -2017,6 +2024,103 @@ function handleSalesDrop(e) {
   document.getElementById('sales-upload-area').classList.remove('drag');
   const file = e.dataTransfer.files[0];
   if (file) uploadSalesFile(file);
+}
+
+async function loadFullReport() {
+  const el = document.getElementById('report-content');
+  if (!el) return;
+  try {
+    const [workers, shifts] = await Promise.all([
+      api('GET', '/api/workers'),
+      api('GET', '/api/shifts/saved'),
+    ]);
+
+    // Build shift stats per worker: unique dates = shifts, sum hours
+    const shiftStats = {};
+    for (const s of (shifts || [])) {
+      const name = (s.worker_name || '').trim();
+      if (!name) continue;
+      if (!shiftStats[name]) shiftStats[name] = { dates: new Set(), hours: 0 };
+      if (s.date) shiftStats[name].dates.add(s.date);
+      shiftStats[name].hours += (parseFloat(s.hours) || 0);
+    }
+
+    // Group workers by manager
+    const managerMap = {};   // managerName → { managerWorker, workers[] }
+    const noManager = [];
+    for (const w of (workers || [])) {
+      if (w.rank === 'manager') {
+        if (!managerMap[w.full_name]) managerMap[w.full_name] = { managerWorker: w, workers: [] };
+        else managerMap[w.full_name].managerWorker = w;
+      }
+    }
+    for (const w of (workers || [])) {
+      if (w.rank === 'manager') continue;
+      const mgr = (w.manager || '').trim();
+      if (mgr && managerMap[mgr]) {
+        managerMap[mgr].workers.push(w);
+      } else if (mgr) {
+        if (!managerMap[mgr]) managerMap[mgr] = { managerWorker: null, workers: [] };
+        managerMap[mgr].workers.push(w);
+      } else {
+        noManager.push(w);
+      }
+    }
+
+    const fmt = n => n % 1 === 0 ? n : n.toFixed(2);
+    let rows = '';
+
+    const workerRow = (w, isMgr) => {
+      const stats = shiftStats[w.full_name] || { dates: new Set(), hours: 0 };
+      const totalShifts = stats.dates.size;
+      const totalHours  = fmt(stats.hours);
+      const bg = isMgr ? 'background:var(--surface);font-weight:600' : '';
+      return `<tr style="${bg}">
+        <td>${esc(w.id_number||'')}</td>
+        <td>${esc(w.full_name||'')}</td>
+        <td>${esc(w.manager||'')}</td>
+        <td style="text-align:center">${totalShifts}</td>
+        <td style="text-align:center">${totalHours}</td>
+      </tr>`;
+    };
+
+    const sumRow = (mgrName, workerList, mgrWorker) => {
+      const allNames = [...workerList.map(w=>w.full_name), mgrWorker ? mgrWorker.full_name : null].filter(Boolean);
+      let totalShifts = 0, totalHours = 0;
+      for (const name of allNames) {
+        const stats = shiftStats[name] || { dates: new Set(), hours: 0 };
+        totalShifts += stats.dates.size;
+        totalHours  += stats.hours;
+      }
+      return `<tr style="background:var(--border);font-weight:700;font-size:.8rem">
+        <td colspan="2">סה״כ ${esc(mgrName)}</td>
+        <td></td>
+        <td style="text-align:center">${totalShifts}</td>
+        <td style="text-align:center">${fmt(totalHours)}</td>
+      </tr>`;
+    };
+
+    for (const [mgrName, group] of Object.entries(managerMap)) {
+      for (const w of group.workers) rows += workerRow(w, false);
+      if (group.managerWorker) rows += workerRow(group.managerWorker, true);
+      rows += sumRow(mgrName, group.workers, group.managerWorker);
+    }
+    for (const w of noManager) rows += workerRow(w, false);
+
+    if (!rows) { el.innerHTML = '<div class="info">אין נתוני עובדים. הוסף עובדים בטאב 👷 עובדים.</div>'; return; }
+
+    el.innerHTML = `
+      <div style="overflow-x:auto">
+      <table class="tbl" style="font-size:.82rem">
+        <thead><tr>
+          <th>ת.ז</th><th>שם עובד</th><th>מנהל</th><th>משמרות</th><th>שעות</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  } catch(e) {
+    const el2 = document.getElementById('report-content');
+    if (el2) el2.innerHTML = `<div class="error">שגיאה: ${esc(e.message)}</div>`;
+  }
 }
 
 async function loadSales() {
