@@ -1519,6 +1519,181 @@ async def upload_sales(u: str = Depends(auth), file: UploadFile = File(...)):
         tmp_path.unlink(missing_ok=True)
 
 
+@app.get("/api/report/export")
+async def export_report(u: str = Depends(auth)):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    workers    = _load_workers(u)
+    shifts_all = _load_saved_shifts(u)
+    sales_all  = _load_sales(u)
+
+    # Shift stats
+    shift_stats: dict = {}
+    for s in shifts_all:
+        name = (s.get("worker_name") or "").strip()
+        if not name:
+            continue
+        if name not in shift_stats:
+            shift_stats[name] = {"dates": set(), "hours": 0.0}
+        if s.get("date"):
+            shift_stats[name]["dates"].add(s["date"])
+        shift_stats[name]["hours"] += float(s.get("hours") or 0)
+
+    # Sales stats
+    def init_sale():
+        return {"total": 0, "rev1500": 0, "rev2500": 0, "rev4000": 0, "so": 0, "issued": 0}
+    sale_stats: dict = {}
+    for s in sales_all:
+        name = ((s.get("first_name") or "") + " " + (s.get("last_name") or "")).strip()
+        if not name:
+            continue
+        if name not in sale_stats:
+            sale_stats[name] = init_sale()
+        st = sale_stats[name]
+        if s.get("approved"):      st["total"]  += 1
+        if s.get("revolving_1500"): st["rev1500"] += 1
+        if s.get("revolving_2500"): st["rev2500"] += 1
+        if s.get("revolving_4000"): st["rev4000"] += 1
+        if s.get("standing_order"): st["so"]      += 1
+        if (s.get("status_raw") or "").strip() == "הונפק": st["issued"] += 1
+
+    # Group by manager
+    manager_map: dict = {}
+    no_manager: list = []
+    for w in workers:
+        if w.get("rank") == "manager":
+            nm = w.get("full_name", "")
+            if nm not in manager_map:
+                manager_map[nm] = {"mgr": w, "workers": []}
+            else:
+                manager_map[nm]["mgr"] = w
+    for w in workers:
+        if w.get("rank") == "manager":
+            continue
+        mgr = (w.get("manager") or "").strip()
+        if mgr and mgr in manager_map:
+            manager_map[mgr]["workers"].append(w)
+        elif mgr:
+            if mgr not in manager_map:
+                manager_map[mgr] = {"mgr": None, "workers": []}
+            manager_map[mgr]["workers"].append(w)
+        else:
+            no_manager.append(w)
+
+    HEADERS = [
+        "ת.ז", "שם עובד", "מנהל", "משמרות", "שעות",
+        "סה\"כ מכירות", "אשראי עד 1500", "אשראי 1501-2500", "אשראי 2501-4000",
+        "סה\"כ הו\"ק", "סה\"כ ארנוקים", "ממוצע מכירות/שעה",
+        "צפי שעות", "יעד", "צפי מכירות", "% הגעה ליעד", "הנפקות",
+    ]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "דוח מלא"
+    ws.sheet_view.rightToLeft = True
+
+    hdr_fill   = PatternFill("solid", fgColor="2F5496")
+    mgr_fill   = PatternFill("solid", fgColor="D6DCE4")
+    sum_fill   = PatternFill("solid", fgColor="BDD7EE")
+    hdr_font   = Font(bold=True, color="FFFFFF", size=10)
+    bold_font  = Font(bold=True, size=10)
+    norm_font  = Font(size=10)
+    center     = Alignment(horizontal="center")
+
+    ws.append(HEADERS)
+    for cell in ws[1]:
+        cell.font      = hdr_font
+        cell.fill      = hdr_fill
+        cell.alignment = center
+
+    def fmt(n):
+        if n is None: return ""
+        return round(n, 2) if n % 1 else int(n)
+
+    def worker_data(w, is_mgr):
+        name = w.get("full_name", "")
+        ss   = shift_stats.get(name, {"dates": set(), "hours": 0.0})
+        sa   = sale_stats.get(name, init_sale())
+        shifts_n = len(ss["dates"])
+        hours_n  = ss["hours"]
+        avg = fmt(sa["total"] / hours_n) if hours_n else ""
+        return [
+            w.get("id_number", ""),
+            name,
+            "" if is_mgr else (w.get("manager") or ""),
+            shifts_n,
+            fmt(hours_n),
+            sa["total"], sa["rev1500"], sa["rev2500"], sa["rev4000"],
+            sa["so"], "",
+            avg,
+            "", w.get("sales_target", ""), "", "", sa["issued"],
+        ]
+
+    def sum_data(mgr_name, name_list):
+        shifts_n = hours_n = total = rev1500 = rev2500 = rev4000 = so = issued = 0
+        for name in name_list:
+            ss = shift_stats.get(name, {"dates": set(), "hours": 0.0})
+            sa = sale_stats.get(name, init_sale())
+            shifts_n += len(ss["dates"])
+            hours_n  += ss["hours"]
+            total    += sa["total"]
+            rev1500  += sa["rev1500"]
+            rev2500  += sa["rev2500"]
+            rev4000  += sa["rev4000"]
+            so       += sa["so"]
+            issued   += sa["issued"]
+        avg = fmt(total / hours_n) if hours_n else ""
+        return [
+            f"סה\"כ {mgr_name}", f"סה\"כ {mgr_name}", "",
+            shifts_n, fmt(hours_n),
+            total, rev1500, rev2500, rev4000,
+            so, "", avg,
+            "", "", "", "", issued,
+        ]
+
+    def append_worker(row_data, is_mgr=False, is_sum=False):
+        ws.append(row_data)
+        row = ws.max_row
+        for cell in ws[row]:
+            cell.font = bold_font if (is_mgr or is_sum) else norm_font
+            if is_sum:
+                cell.fill = sum_fill
+            elif is_mgr:
+                cell.fill = mgr_fill
+            if cell.column > 3:
+                cell.alignment = center
+
+    for mgr_name, group in manager_map.items():
+        for w in group["workers"]:
+            append_worker(worker_data(w, False))
+        if group["mgr"]:
+            append_worker(worker_data(group["mgr"], True), is_mgr=True)
+        all_names = [w.get("full_name","") for w in group["workers"]]
+        if group["mgr"]:
+            all_names.append(group["mgr"].get("full_name",""))
+        append_worker(sum_data(mgr_name, all_names), is_sum=True)
+
+    for w in no_manager:
+        append_worker(worker_data(w, False))
+
+    for i, col in enumerate(ws.columns, 1):
+        max_len = max((len(str(c.value or "")) for c in col), default=8)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 28)
+
+    out = Path(tempfile.mktemp(suffix=".xlsx"))
+    wb.save(str(out))
+    data = out.read_bytes()
+    out.unlink(missing_ok=True)
+
+    from fastapi.responses import Response
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="worker_report.xlsx"'},
+    )
+
+
 # ── Recruiter Analysis ────────────────────────────────────────────────────────
 
 RECRUITER_CONFIG_FILE = BASE_DIR / "data" / "shared" / "recruiter_config.json"

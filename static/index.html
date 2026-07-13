@@ -1660,7 +1660,11 @@ function renderShiftsApp() {
   }
 
   if (_shiftsTab === 'report') {
-    el.innerHTML = tabBar + `<div id="report-content"><div class="info">טוען...</div></div>`;
+    el.innerHTML = tabBar + `
+      <div style="margin-bottom:.8rem">
+        <button class="btn btn-outline btn-sm" onclick="exportReport()">⬇️ ייצוא לאקסל</button>
+      </div>
+      <div id="report-content"><div class="info">טוען...</div></div>`;
     setTimeout(loadFullReport, 0);
     return;
   }
@@ -2024,6 +2028,10 @@ function handleSalesDrop(e) {
   document.getElementById('sales-upload-area').classList.remove('drag');
   const file = e.dataTransfer.files[0];
   if (file) uploadSalesFile(file);
+}
+
+function exportReport() {
+  window.location.href = '/api/report/export';
 }
 
 async function loadFullReport() {
