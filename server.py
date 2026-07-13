@@ -1333,26 +1333,54 @@ async def upload_workers(u: str = Depends(auth), file: UploadFile = File(...)):
     try:
         df = pd.read_excel(tmp_path, header=0)
         df.columns = [str(c).strip() for c in df.columns]
-        # Try to map common Hebrew column names
-        col_map = {
-            "שם מלא": "full_name", "שם": "full_name",
-            "תעודת זהות": "id", "ת.ז": "id", "ת\"ז": "id", "מספר עובד": "id",
-            "כינוי": "nickname", "שם כינוי": "nickname",
-            "מנהל": "manager", "שם מנהל": "manager",
-            "יעד מכירות": "sales_target", "יעד": "sales_target",
-            "דרגה": "rank", "תפקיד": "rank",
+
+        # Map column names to internal fields — partial case-insensitive match
+        keywords = {
+            "full_name":    ["שם", "name"],
+            "id_number":    ["ז", "id", "עובד", "מספר"],
+            "nickname":     ["כינוי", "nick"],
+            "manager":      ["מנהל", "manager"],
+            "rank":         ["דרגה", "תפקיד", "type", "rank"],
+            "sales_target": ["יעד", "מכירות", "target", "sales"],
         }
+        # Build field→column mapping
+        field_col: dict[str, str] = {}
+        for field, kws in keywords.items():
+            for col in df.columns:
+                col_l = col.lower()
+                if any(kw.lower() in col_l for kw in kws) and field not in field_col:
+                    field_col[field] = col
+                    break
+
+        # Positional fallback: name, id, nickname, manager, rank, sales_target
+        positional = ["full_name", "id_number", "nickname", "manager", "rank", "sales_target"]
+        for i, field in enumerate(positional):
+            if field not in field_col and i < len(df.columns):
+                field_col[field] = df.columns[i]
+
+        def cell(row, field):
+            col = field_col.get(field)
+            if col is None:
+                return ""
+            val = row[col]
+            return "" if (val is None or (isinstance(val, float) and pd.isna(val))) else str(val).strip()
+
         workers = []
         for _, row in df.iterrows():
-            w = {"id": str(_uuid.uuid4())}
-            for heb, eng in col_map.items():
-                for col in df.columns:
-                    if heb in col and eng not in w:
-                        val = row[col]
-                        w[eng] = "" if (val is None or (isinstance(val, float) and pd.isna(val))) else str(val).strip()
-            if not w.get("full_name"):
+            full_name = cell(row, "full_name")
+            if not full_name:
                 continue
-            workers.append(w)
+            rank_val = cell(row, "rank").lower()
+            rank = "manager" if any(x in rank_val for x in ["מנהל", "manager"]) else "worker"
+            workers.append({
+                "id":           str(_uuid.uuid4()),
+                "full_name":    full_name,
+                "id_number":    cell(row, "id_number"),
+                "nickname":     cell(row, "nickname"),
+                "manager":      cell(row, "manager"),
+                "rank":         rank,
+                "sales_target": cell(row, "sales_target"),
+            })
         _save_workers(u, workers)
         return {"ok": True, "count": len(workers)}
     finally:
