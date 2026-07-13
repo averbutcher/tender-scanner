@@ -1895,10 +1895,11 @@ function renderWorkersTable(workers) {
   el.innerHTML = `
     <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
       <button class="btn btn-primary" style="font-size:.82rem" onclick="showAddWorkerForm()">+ הוסף עובד</button>
-      <label class="btn btn-outline" style="font-size:.82rem;cursor:pointer">
+      <label class="btn btn-outline" style="font-size:.82rem;cursor:pointer" id="workers-upload-label">
         📥 העלה Excel
         <input type="file" accept=".xlsx,.xls" onchange="uploadWorkersExcel(this)" style="display:none">
       </label>
+      <span id="workers-upload-status" style="font-size:.82rem"></span>
       <span style="font-size:.8rem;color:var(--muted);margin-right:auto">${workers.length} עובדים</span>
     </div>
     <div id="worker-form-area"></div>
@@ -2014,19 +2015,30 @@ async function deleteWorker(id) {
 async function uploadWorkersExcel(input) {
   const file = input.files[0];
   if (!file) return;
-  const existing = await GET('/api/workers');
-  if (existing?.length > 0) {
-    if (!confirm(`קיימים ${existing.length} עובדים. העלאה תמחק את כל הנתונים הקיימים ותחליף אותם. להמשיך?`)) {
-      input.value = '';
-      return;
+  const setStatus = (msg, color='var(--muted)') => {
+    const el = document.getElementById('workers-upload-status');
+    if (el) { el.textContent = msg; el.style.color = color; }
+  };
+  setStatus(`⏳ בודק קובץ "${file.name}"...`);
+  try {
+    const existing = await GET('/api/workers');
+    if (existing?.length > 0) {
+      if (!confirm(`קיימים ${existing.length} עובדים. העלאה תמחק את כל הנתונים הקיימים ותחליף אותם. להמשיך?`)) {
+        input.value = '';
+        setStatus('');
+        return;
+      }
     }
-  }
-  const fd = new FormData();
-  fd.append('file', file);
-  const res = await api('POST', '/api/workers/upload', fd, true);
-  if (res?.ok) {
-    toast(`✅ ${res.count} עובדים נטענו בהצלחה`, 'success');
-    await loadWorkers();
+    setStatus('⏳ מעלה ומעבד...');
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await api('POST', '/api/workers/upload', fd, true);
+    if (res?.ok) {
+      setStatus(`✅ ${res.count} עובדים נטענו בהצלחה`, 'var(--success)');
+      await loadWorkers();
+    }
+  } catch(e) {
+    setStatus(`❌ שגיאה: ${e.message}`, 'var(--red)');
   }
   input.value = '';
 }
