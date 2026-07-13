@@ -1439,6 +1439,86 @@ async def delete_worker(worker_id: str, u: str = Depends(auth)):
     return {"ok": True}
 
 
+# ── Sales ─────────────────────────────────────────────────────────────────────
+
+def _sales_path(u: str) -> Path:
+    return _udir(u) / "sales.json"
+
+def _load_sales(u: str) -> list:
+    return _rj(_sales_path(u), [])
+
+def _save_sales(u: str, sales: list):
+    _sales_path(u).write_text(json.dumps(sales, ensure_ascii=False, indent=2), encoding="utf-8")
+
+@app.get("/api/sales")
+async def get_sales(u: str = Depends(auth)):
+    return _load_sales(u)
+
+@app.post("/api/sales/upload")
+async def upload_sales(u: str = Depends(auth), file: UploadFile = File(...)):
+    import pandas as pd
+    contents = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp.write(contents)
+        tmp_path = Path(tmp.name)
+    try:
+        target_sheet = "פירוט בקשות מעודכן"
+        xl = pd.ExcelFile(str(tmp_path))
+        sheet_name = None
+        for s in xl.sheet_names:
+            if s.strip() == target_sheet:
+                sheet_name = s
+                break
+        if sheet_name is None:
+            raise HTTPException(status_code=400, detail=f"גיליון '{target_sheet}' לא נמצא בקובץ")
+
+        df = pd.read_excel(str(tmp_path), sheet_name=sheet_name, header=0, dtype=str)
+        df = df.fillna("")
+
+        def cell(row, col_idx):
+            if col_idx < len(row):
+                v = str(row.iloc[col_idx]).strip()
+                return "" if v in ("nan", "None") else v
+            return ""
+
+        sales = []
+        for _, row in df.iterrows():
+            sale_num = cell(row, 0)   # A
+            if not sale_num:
+                continue
+            date_val = cell(row, 1)   # B
+            branch   = cell(row, 2)   # C
+            first_name = cell(row, 3) # D
+            last_name  = cell(row, 4) # E
+            standing_order_raw = cell(row, 10)  # K
+            standing_order = standing_order_raw == "מולא"
+            revolving_l    = cell(row, 11) == "1"  # L
+            revolving_m    = cell(row, 12) == "1"  # M
+            revolving_h    = cell(row, 13) == "1"  # N
+            revolving_xl   = cell(row, 14) == "1"  # O
+            status_raw = cell(row, 15)              # P
+            approved = status_raw != "תעודה מזהה לא בתוקף" and status_raw != ""
+
+            sales.append({
+                "sale_number":    sale_num,
+                "date":           date_val,
+                "branch":         branch,
+                "first_name":     first_name,
+                "last_name":      last_name,
+                "standing_order": standing_order,
+                "revolving_1500": revolving_l,
+                "revolving_2500": revolving_m,
+                "revolving_4000": revolving_h,
+                "revolving_4001": revolving_xl,
+                "approved":       approved,
+                "status_raw":     status_raw,
+            })
+        _save_sales(u, sales)
+        return {"ok": True, "count": len(sales)}
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 # ── Recruiter Analysis ────────────────────────────────────────────────────────
 
 RECRUITER_CONFIG_FILE = BASE_DIR / "data" / "shared" / "recruiter_config.json"

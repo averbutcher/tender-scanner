@@ -1640,21 +1640,21 @@ function renderShiftsApp() {
 
   if (_shiftsTab === 'sales') {
     el.innerHTML = tabBar + `
-      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1.5rem">העלה קובץ מהכספת לניתוח נתוני מכירות</p>
-      <div style="max-width:480px">
-        <div style="font-size:.82rem;font-weight:600;margin-bottom:.6rem">📂 קובץ כספת</div>
+      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1.2rem">העלה קובץ מכירות לניתוח ביצועי עובדים</p>
+      <div style="max-width:480px;margin-bottom:1.2rem">
         <div class="upload-area" id="sales-upload-area"
              onclick="document.getElementById('sales-file').click()"
              ondragover="event.preventDefault();this.classList.add('drag')"
              ondragleave="this.classList.remove('drag')"
              ondrop="handleSalesDrop(event)">
-          <input type="file" id="sales-file" accept=".xlsx,.xls" onchange="handleSalesFile(this.files[0])" style="display:none">
+          <input type="file" id="sales-file" accept=".xlsx,.xls" onchange="uploadSalesFile(this.files[0])" style="display:none">
           <div style="font-size:1.8rem">📂</div>
-          <span class="upload-label">לחץ או גרור קובץ Excel מהכספת</span>
-          <div id="sales-file-name" style="font-size:.8rem;color:var(--accent);margin-top:.3rem"></div>
+          <span class="upload-label">לחץ או גרור קובץ Excel מכירות</span>
+          <div id="sales-file-status" style="font-size:.8rem;color:var(--accent);margin-top:.3rem"></div>
         </div>
-        <div id="sales-result" style="margin-top:1.2rem"></div>
-      </div>`;
+      </div>
+      <div id="sales-table-wrap"></div>`;
+    loadSales();
     return;
   }
 
@@ -1994,21 +1994,65 @@ async function uploadWorkersExcel(input) {
   }
   input.value = '';
 }
-let _salesFile = null;
-
-function handleSalesFile(file) {
+async function uploadSalesFile(file) {
   if (!file) return;
-  _salesFile = file;
-  document.getElementById('sales-file-name').textContent = `✅ ${file.name}`;
-  document.getElementById('sales-result').innerHTML =
-    `<div class="info">קובץ "${esc(file.name)}" נטען בהצלחה. ניתוח נתונים יתווסף בקרוב.</div>`;
+  const setStatus = (msg, color='var(--accent)') => {
+    const el = document.getElementById('sales-file-status');
+    if (el) { el.textContent = msg; el.style.color = color; }
+  };
+  setStatus('⏳ מעלה ומעבד...');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await api('POST', '/api/sales/upload', fd, true);
+    if (res?.ok) {
+      setStatus(`✅ ${res.count} רשומות נטענו`, 'var(--green)');
+      loadSales();
+    }
+  } catch(e) { setStatus(`❌ שגיאה: ${e.message}`, 'var(--red)'); }
 }
 
 function handleSalesDrop(e) {
   e.preventDefault();
   document.getElementById('sales-upload-area').classList.remove('drag');
   const file = e.dataTransfer.files[0];
-  if (file) handleSalesFile(file);
+  if (file) uploadSalesFile(file);
+}
+
+async function loadSales() {
+  const wrap = document.getElementById('sales-table-wrap');
+  if (!wrap) return;
+  const rows = await api('GET', '/api/sales');
+  if (!rows || !rows.length) {
+    wrap.innerHTML = '<div class="info" style="margin-top:0">אין נתוני מכירות. העלה קובץ Excel.</div>';
+    return;
+  }
+  const statusIcon = r => r.approved ? '✅' : '❌';
+  const bool = v => v ? '✔' : '';
+  wrap.innerHTML = `
+    <div style="font-size:.82rem;color:var(--muted);margin-bottom:.6rem">${rows.length} רשומות</div>
+    <div style="overflow-x:auto">
+    <table class="tbl" style="font-size:.78rem;min-width:900px">
+      <thead><tr>
+        <th>מס׳</th><th>תאריך</th><th>סניף</th><th>שם פרטי</th><th>שם משפחה</th>
+        <th>הו״ק</th><th>עד 1500</th><th>1501-2500</th><th>2501-4000</th><th>מעל 4001</th><th>סטטוס</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr>
+          <td>${esc(r.sale_number)}</td>
+          <td>${esc(r.date)}</td>
+          <td>${esc(r.branch)}</td>
+          <td>${esc(r.first_name)}</td>
+          <td>${esc(r.last_name)}</td>
+          <td style="text-align:center">${bool(r.standing_order)}</td>
+          <td style="text-align:center">${bool(r.revolving_1500)}</td>
+          <td style="text-align:center">${bool(r.revolving_2500)}</td>
+          <td style="text-align:center">${bool(r.revolving_4000)}</td>
+          <td style="text-align:center">${bool(r.revolving_4001)}</td>
+          <td style="text-align:center">${statusIcon(r)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
 }
 
 function sortSaved(col) {
