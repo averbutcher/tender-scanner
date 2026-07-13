@@ -1163,6 +1163,26 @@ async def shifts_compare(
 ):
     cfg = _load_shifts_cfg(u)
 
+    # Build aliases and managers from workers table (takes precedence over cfg)
+    workers = _load_workers(u)
+    worker_aliases = {
+        w["nickname"]: w["full_name"]
+        for w in workers
+        if w.get("nickname") and w.get("full_name") and w["nickname"] != w["full_name"]
+    }
+    worker_managers = [
+        w["full_name"] for w in workers if w.get("rank") == "manager" and w.get("full_name")
+    ]
+    known_worker_names = {w["full_name"] for w in workers if w.get("full_name")}
+
+    compare_cfg = dict(cfg)
+    merged_aliases = dict(cfg.get("aliases", {}))
+    merged_aliases.update(worker_aliases)
+    compare_cfg["aliases"] = merged_aliases
+    if worker_managers:
+        compare_cfg["managers"] = worker_managers
+    compare_cfg["known_workers"] = known_worker_names
+
     excel_bytes = await excel.read()
     if source == "gmail":
         parse_cfg = dict(cfg)
@@ -1177,7 +1197,7 @@ async def shifts_compare(
     try:
         msg_entries = parse_message(message)
         excel_entries = parse_excel(str(tmp_path), parse_cfg)
-        results = compare(msg_entries, excel_entries, cfg)
+        results = compare(msg_entries, excel_entries, compare_cfg)
 
         out_path = Path(tempfile.mktemp(suffix=".xlsx"))
         export_to_excel(results, str(out_path))

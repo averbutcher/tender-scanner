@@ -333,6 +333,7 @@ def _compare_day(msg_entries: list, excel_entries: list, cfg: dict) -> list[dict
     threshold_min = cfg["rules"]["gap_threshold_minutes"]
     default_start = datetime.strptime(cfg["rules"]["default_start_time"], "%H:%M").time()
     managers      = [m.strip() for m in cfg.get("managers", []) if m.strip()]
+    known_workers = cfg.get("known_workers", set())  # set of full_names from workers table
 
     # Infer "the date" for this run from Excel
     excel_date = next(
@@ -564,7 +565,7 @@ def _compare_day(msg_entries: list, excel_entries: list, cfg: dict) -> list[dict
                 mh = mr["hours"] or 0
                 output.append({
                     "date":        excel_date or "",
-                    "worker_name": mr["worker_name"],
+                    "worker_name": key,
                     "workplace":   mr["workplace"],
                     "start_time":  default_start,
                     "end_time":    add_hours(default_start, mh),
@@ -576,6 +577,12 @@ def _compare_day(msg_entries: list, excel_entries: list, cfg: dict) -> list[dict
     for row in output:
         if row.get("hours") is None and row.get("start_time") and row.get("end_time"):
             row["hours"] = hours_between(row["start_time"], row["end_time"])
+        # Flag workers that don't appear in the workers table
+        if known_workers:
+            name = row.get("worker_name", "")
+            if name and name not in known_workers:
+                existing_note = row.get("notes", "")
+                row["notes"] = (existing_note + " | ⚠️ עובד לא נמצא בטבלה").lstrip(" | ") if existing_note else "⚠️ עובד לא נמצא בטבלה"
 
     return output
 
