@@ -568,50 +568,8 @@ function renderSbSettings() {
         <label class="sb-label">שעת ברירת מחדל</label>
         <input class="sb-input" id="sb-defstart" maxlength="5" value="${(cfg.rules||{}).default_start_time||'10:00'}">
         <button class="sb-save" onclick="saveSbShiftsSettings()">💾 שמור הגדרות</button>
-        <hr class="divider">
-        <div class="sb-section" style="margin-top:0">כינויי שמות</div>
-        <div id="sb-aliases"></div>
-        <button class="btn btn-outline btn-sm" style="width:100%;margin-top:.3rem" onclick="addAlias()">➕ הוסף</button>
-        <button class="sb-save" style="margin-top:.4rem" onclick="saveAliases()">💾 שמור כינויים</button>
-        <hr class="divider">
-        <div class="sb-section" style="margin-top:0">מנהלים (אופציונלי)</div>
-        <div style="font-size:.75rem;color:var(--muted);margin-bottom:.4rem">מנהלים שבאקסל תמיד, בהודעה רק לפעמים — אם חסרים בהודעה, מתעלמים מהם</div>
-        <div id="sb-managers"></div>
-        <button class="btn btn-outline btn-sm" style="width:100%;margin-top:.3rem" onclick="addManager()">➕ הוסף מנהל</button>
-        <button class="sb-save" style="margin-top:.4rem" onclick="saveManagers()">💾 שמור מנהלים</button>
       </div>`;
-    renderAliases();
-    renderManagers();
   }
-}
-
-function renderAliases() {
-  const el = document.getElementById('sb-aliases');
-  if (!el) return;
-  el.innerHTML = S.aliases.map(([m,x],i) => `
-    <div class="alias-row">
-      <input placeholder="בהודעה" value="${esc(m)}" oninput="S.aliases[${i}][0]=this.value">
-      <input placeholder="באקסל" value="${esc(x)}" oninput="S.aliases[${i}][1]=this.value">
-      <button class="alias-del" onclick="S.aliases.splice(${i},1);renderAliases()">✕</button>
-    </div>`).join('');
-}
-function addAlias() { S.aliases.push(['','']); renderAliases(); }
-
-function renderManagers() {
-  const el = document.getElementById('sb-managers');
-  if (!el) return;
-  el.innerHTML = S.managers.map((name, i) => `
-    <div class="alias-row">
-      <input placeholder="שם המנהל" value="${esc(name)}" oninput="S.managers[${i}]=this.value" style="flex:1">
-      <button class="alias-del" onclick="S.managers.splice(${i},1);renderManagers()">✕</button>
-    </div>`).join('');
-}
-function addManager() { S.managers.push(''); renderManagers(); }
-
-async function saveManagers() {
-  S.shiftsCfg.managers = S.managers.map(m => m.trim()).filter(Boolean);
-  await POST('/api/shifts/config', S.shiftsCfg);
-  toast('מנהלים נשמרו!');
 }
 
 async function saveSbTenderSettings() {
@@ -633,12 +591,6 @@ async function saveSbShiftsSettings() {
   S.shiftsCfg.rules.default_start_time = document.getElementById('sb-defstart').value.trim();
   await POST('/api/shifts/config', S.shiftsCfg);
   toast('נשמר!');
-}
-
-async function saveAliases() {
-  S.shiftsCfg.aliases = Object.fromEntries(S.aliases.filter(([k,v])=>k.trim()&&v.trim()));
-  await POST('/api/shifts/config', S.shiftsCfg);
-  toast('כינויים נשמרו!');
 }
 
 // ══════════════════════════════════════════
