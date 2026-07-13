@@ -2030,12 +2030,13 @@ async function loadFullReport() {
   const el = document.getElementById('report-content');
   if (!el) return;
   try {
-    const [workers, shifts] = await Promise.all([
+    const [workers, shifts, salesData] = await Promise.all([
       api('GET', '/api/workers'),
       api('GET', '/api/shifts/saved'),
+      api('GET', '/api/sales'),
     ]);
 
-    // Build shift stats per worker: unique dates = shifts, sum hours
+    // Shift stats per worker: unique dates = shifts, sum hours
     const shiftStats = {};
     for (const s of (shifts || [])) {
       const name = (s.worker_name || '').trim();
@@ -2045,8 +2046,24 @@ async function loadFullReport() {
       shiftStats[name].hours += (parseFloat(s.hours) || 0);
     }
 
+    // Sales stats per worker (matched by first_name + " " + last_name = full_name)
+    const salesStats = {};
+    const initSale = () => ({ total: 0, rev1500: 0, rev2500: 0, rev4000: 0, standingOrder: 0, issued: 0 });
+    for (const s of (salesData || [])) {
+      const name = ((s.first_name || '') + ' ' + (s.last_name || '')).trim();
+      if (!name) continue;
+      if (!salesStats[name]) salesStats[name] = initSale();
+      const st = salesStats[name];
+      if (s.approved)         st.total++;
+      if (s.revolving_1500)   st.rev1500++;
+      if (s.revolving_2500)   st.rev2500++;
+      if (s.revolving_4000)   st.rev4000++;
+      if (s.standing_order)   st.standingOrder++;
+      if ((s.status_raw || '').trim() === 'הונפק') st.issued++;
+    }
+
     // Group workers by manager
-    const managerMap = {};   // managerName → { managerWorker, workers[] }
+    const managerMap = {};
     const noManager = [];
     for (const w of (workers || [])) {
       if (w.rank === 'manager') {
@@ -2057,46 +2074,78 @@ async function loadFullReport() {
     for (const w of (workers || [])) {
       if (w.rank === 'manager') continue;
       const mgr = (w.manager || '').trim();
-      if (mgr && managerMap[mgr]) {
-        managerMap[mgr].workers.push(w);
-      } else if (mgr) {
-        if (!managerMap[mgr]) managerMap[mgr] = { managerWorker: null, workers: [] };
-        managerMap[mgr].workers.push(w);
-      } else {
-        noManager.push(w);
-      }
+      if (mgr && managerMap[mgr]) managerMap[mgr].workers.push(w);
+      else if (mgr) { if (!managerMap[mgr]) managerMap[mgr] = { managerWorker: null, workers: [] }; managerMap[mgr].workers.push(w); }
+      else noManager.push(w);
     }
 
-    const fmt = n => n % 1 === 0 ? n : n.toFixed(2);
+    const fmt = n => (n === null || n === undefined) ? '' : (n % 1 === 0 ? n : parseFloat(n.toFixed(2)));
+    const pct = (a, b) => b ? fmt(a / b) : '—';
     let rows = '';
 
     const workerRow = (w, isMgr) => {
-      const stats = shiftStats[w.full_name] || { dates: new Set(), hours: 0 };
-      const totalShifts = stats.dates.size;
-      const totalHours  = fmt(stats.hours);
+      const ss = shiftStats[w.full_name] || { dates: new Set(), hours: 0 };
+      const sa = salesStats[w.full_name] || initSale();
+      const totalShifts = ss.dates.size;
+      const totalHours  = ss.hours;
+      const avgPerHour  = totalHours ? fmt(sa.total / totalHours) : '—';
       const bg = isMgr ? 'background:var(--surface);font-weight:600' : '';
       return `<tr style="${bg}">
         <td>${esc(w.id_number||'')}</td>
         <td>${esc(w.full_name||'')}</td>
-        <td>${esc(w.manager||'')}</td>
+        <td>${esc(isMgr ? '' : (w.manager||''))}</td>
         <td style="text-align:center">${totalShifts}</td>
-        <td style="text-align:center">${totalHours}</td>
+        <td style="text-align:center">${fmt(totalHours)}</td>
+        <td style="text-align:center">${sa.total}</td>
+        <td style="text-align:center">${sa.rev1500}</td>
+        <td style="text-align:center">${sa.rev2500}</td>
+        <td style="text-align:center">${sa.rev4000}</td>
+        <td style="text-align:center">${sa.standingOrder}</td>
+        <td style="text-align:center"></td>
+        <td style="text-align:center">${avgPerHour}</td>
+        <td style="text-align:center">—</td>
+        <td style="text-align:center">${esc(w.sales_target||'')}</td>
+        <td style="text-align:center">—</td>
+        <td style="text-align:center">—</td>
+        <td style="text-align:center">${sa.issued}</td>
       </tr>`;
+    };
+
+    const sumWorkers = (nameList) => {
+      let shifts=0, hours=0, total=0, rev1500=0, rev2500=0, rev4000=0, so=0, issued=0;
+      for (const name of nameList) {
+        const ss = shiftStats[name] || { dates: new Set(), hours: 0 };
+        const sa = salesStats[name] || initSale();
+        shifts += ss.dates.size;
+        hours  += ss.hours;
+        total  += sa.total;
+        rev1500 += sa.rev1500;
+        rev2500 += sa.rev2500;
+        rev4000 += sa.rev4000;
+        so      += sa.standingOrder;
+        issued  += sa.issued;
+      }
+      return { shifts, hours, total, rev1500, rev2500, rev4000, so, issued };
     };
 
     const sumRow = (mgrName, workerList, mgrWorker) => {
       const allNames = [...workerList.map(w=>w.full_name), mgrWorker ? mgrWorker.full_name : null].filter(Boolean);
-      let totalShifts = 0, totalHours = 0;
-      for (const name of allNames) {
-        const stats = shiftStats[name] || { dates: new Set(), hours: 0 };
-        totalShifts += stats.dates.size;
-        totalHours  += stats.hours;
-      }
+      const t = sumWorkers(allNames);
+      const avgPerHour = t.hours ? fmt(t.total / t.hours) : '—';
       return `<tr style="background:var(--border);font-weight:700;font-size:.8rem">
         <td colspan="2">סה״כ ${esc(mgrName)}</td>
         <td></td>
-        <td style="text-align:center">${totalShifts}</td>
-        <td style="text-align:center">${fmt(totalHours)}</td>
+        <td style="text-align:center">${t.shifts}</td>
+        <td style="text-align:center">${fmt(t.hours)}</td>
+        <td style="text-align:center">${t.total}</td>
+        <td style="text-align:center">${t.rev1500}</td>
+        <td style="text-align:center">${t.rev2500}</td>
+        <td style="text-align:center">${t.rev4000}</td>
+        <td style="text-align:center">${t.so}</td>
+        <td></td>
+        <td style="text-align:center">${avgPerHour}</td>
+        <td></td><td></td><td></td><td></td>
+        <td style="text-align:center">${t.issued}</td>
       </tr>`;
     };
 
@@ -2109,11 +2158,15 @@ async function loadFullReport() {
 
     if (!rows) { el.innerHTML = '<div class="info">אין נתוני עובדים. הוסף עובדים בטאב 👷 עובדים.</div>'; return; }
 
+    const th = t => `<th style="white-space:nowrap;font-size:.75rem">${t}</th>`;
     el.innerHTML = `
       <div style="overflow-x:auto">
-      <table class="tbl" style="font-size:.82rem">
+      <table class="tbl" style="font-size:.8rem">
         <thead><tr>
-          <th>ת.ז</th><th>שם עובד</th><th>מנהל</th><th>משמרות</th><th>שעות</th>
+          ${th('ת.ז')}${th('שם עובד')}${th('מנהל')}${th('משמרות')}${th('שעות')}
+          ${th('סה״כ מכירות')}${th('אשראי עד 1500')}${th('אשראי 1501-2500')}${th('אשראי 2501-4000')}
+          ${th('סה״כ הו״ק')}${th('סה״כ ארנוקים')}${th('ממוצע מכירות/שעה')}
+          ${th('צפי שעות')}${th('יעד')}${th('צפי מכירות')}${th('% הגעה ליעד')}${th('הנפקות')}
         </tr></thead>
         <tbody>${rows}</tbody>
       </table></div>`;
