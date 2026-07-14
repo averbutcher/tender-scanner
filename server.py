@@ -1313,6 +1313,39 @@ async def export_saved_shifts(u: str = Depends(auth), date: str = Query(None), n
                     media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": "attachment; filename=worker_hours.xlsx"})
 
+@app.post("/api/shifts/saved/upload")
+async def upload_saved_shifts(u: str = Depends(auth), file: UploadFile = File(...)):
+    import pandas as pd, uuid as _uuid
+    contents = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp.write(contents)
+        tmp_path = Path(tmp.name)
+    try:
+        df = pd.read_excel(str(tmp_path), dtype=str).fillna("")
+        col_map = {
+            "תאריך": "date", "שם עובד": "worker_name", "מקום עבודה": "workplace",
+            "שעת התחלה": "start_time", "שעת סיום": "end_time", "שעות": "hours",
+            "מכירות": "sales", "הערות": "notes", "סטטוס": "status",
+        }
+        rows = []
+        for _, row in df.iterrows():
+            r = {"id": str(_uuid.uuid4())}
+            for heb, key in col_map.items():
+                if heb in df.columns:
+                    v = str(row[heb]).strip()
+                    r[key] = "" if v in ("nan", "None") else v
+                else:
+                    r[key] = ""
+            if not r.get("worker_name") and not r.get("date"):
+                continue
+            rows.append(r)
+        existing = _load_saved_shifts(u)
+        existing.extend(rows)
+        _save_saved_shifts(u, existing)
+        return {"ok": True, "count": len(rows)}
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
 @app.put("/api/shifts/saved/{row_id}")
 async def update_saved_shift(row_id: str, body: dict, u: str = Depends(auth)):
     rows = _load_saved_shifts(u)

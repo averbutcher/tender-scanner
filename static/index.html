@@ -1632,7 +1632,15 @@ function renderShiftsApp() {
     </div>`;
 
   if (_shiftsTab === 'saved') {
-    el.innerHTML = tabBar + `<div id="saved-shifts-content"><div class="info">טוען...</div></div>`;
+    el.innerHTML = tabBar + `
+      <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem">
+        <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0">
+          ⬆️ ייבוא מאקסל
+          <input type="file" accept=".xlsx,.xls" style="display:none" onchange="uploadSavedShiftsExcel(this)">
+        </label>
+        <span id="saved-upload-status" style="font-size:.78rem"></span>
+      </div>
+      <div id="saved-shifts-content"><div class="info">טוען...</div></div>`;
     loadSavedShifts();
     return;
   }
@@ -1840,6 +1848,26 @@ async function saveComparison() {
   if (!S.shiftsResult?.length) return;
   const res = await api('POST', '/api/shifts/saved', S.shiftsResult);
   if (res?.ok) toast(`✅ נשמרו ${res.saved} שורות`, 'success');
+}
+
+async function uploadSavedShiftsExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const st = document.getElementById('saved-upload-status');
+  const set = (msg, color='var(--muted)') => { if (st) { st.textContent = msg; st.style.color = color; } };
+  set('⏳ מעלה...');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await api('POST', '/api/shifts/saved/upload', fd, true);
+    if (res?.ok) {
+      set(`✅ ${res.count} שורות יובאו`, 'var(--green)');
+      await loadSavedShifts();
+    }
+  } catch(e) {
+    set(`❌ ${e.message}`, 'var(--red)');
+  }
+  input.value = '';
 }
 
 async function loadSavedShifts() {
