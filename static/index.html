@@ -571,71 +571,8 @@ function renderSbSettings() {
         <label class="sb-label">שעת ברירת מחדל</label>
         <input class="sb-input" id="sb-defstart" maxlength="5" value="${(cfg.rules||{}).default_start_time||'10:00'}">
         <button class="sb-save" onclick="saveSbShiftsSettings()">💾 שמור הגדרות</button>
-        <hr class="divider">
-        <div class="sb-section" style="margin-top:0">ימי חג וחופש</div>
-        <div style="font-size:.75rem;color:var(--muted);margin-bottom:.6rem">ימים שאינם ימי עבודה מלאים — משמש לחישוב צפי</div>
-        <div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.5rem">
-          <select id="sb-holiday-year" class="sb-input" style="width:auto" onchange="loadSbHolidays()">
-            ${[new Date().getFullYear()-1, new Date().getFullYear(), new Date().getFullYear()+1].map(y=>`<option value="${y}">${y}</option>`).join('')}
-          </select>
-          <button class="btn btn-outline btn-sm" onclick="refreshSbHolidays()">🔄</button>
-        </div>
-        <div id="sb-holidays-list" style="font-size:.78rem;max-height:280px;overflow-y:auto"></div>
-        <button class="btn btn-outline btn-sm" style="width:100%;margin-top:.4rem" onclick="addSbHoliday()">➕ הוסף יום</button>
-        <button class="sb-save" style="margin-top:.3rem" onclick="saveSbHolidays()">💾 שמור חגים</button>
       </div>`;
-  loadSbHolidays();
   }
-}
-
-let _sbHolidays = [];
-
-async function loadSbHolidays(refresh) {
-  const yearEl = document.getElementById('sb-holiday-year');
-  if (!yearEl) return;
-  const year = parseInt(yearEl.value);
-  const url = `/api/holidays/${year}` + (refresh ? '?refresh=true' : '');
-  const list = await api('GET', url);
-  _sbHolidays = list ? JSON.parse(JSON.stringify(list)) : [];
-  if (refresh && S.holidays) S.holidays[year] = null; // invalidate cache
-  renderSbHolidays();
-}
-
-async function refreshSbHolidays() {
-  await loadSbHolidays(true);
-}
-
-function renderSbHolidays() {
-  const el = document.getElementById('sb-holidays-list');
-  if (!el) return;
-  const typeLabel = { off: 'יום חופש', half: 'חצי יום' };
-  el.innerHTML = _sbHolidays.map((h, i) => `
-    <div style="display:grid;grid-template-columns:90px 1fr auto auto;gap:.3rem;align-items:center;margin-bottom:.3rem">
-      <input class="sb-input" style="padding:.2rem .4rem;font-size:.75rem" value="${esc(h.date)}"
-        oninput="_sbHolidays[${i}].date=this.value">
-      <input class="sb-input" style="padding:.2rem .4rem;font-size:.75rem" value="${esc(h.name)}"
-        oninput="_sbHolidays[${i}].name=this.value">
-      <select class="sb-input" style="padding:.2rem .3rem;font-size:.75rem;width:auto"
-        onchange="_sbHolidays[${i}].type=this.value">
-        <option value="off" ${h.type==='off'?'selected':''}>יום חופש</option>
-        <option value="half" ${h.type==='half'?'selected':''}>חצי יום</option>
-      </select>
-      <button class="alias-del" onclick="_sbHolidays.splice(${i},1);renderSbHolidays()">✕</button>
-    </div>`).join('');
-}
-
-function addSbHoliday() {
-  _sbHolidays.push({ date: '', name: '', type: 'off' });
-  renderSbHolidays();
-}
-
-async function saveSbHolidays() {
-  const yearEl = document.getElementById('sb-holiday-year');
-  if (!yearEl) return;
-  const year = parseInt(yearEl.value);
-  await api('PUT', `/api/holidays/${year}`, _sbHolidays);
-  if (S.holidays) S.holidays[year] = null; // invalidate cache
-  toast('חגים נשמרו!');
 }
 
 async function saveSbTenderSettings() {
@@ -1691,6 +1628,7 @@ function renderShiftsApp() {
       <div class="tab ${_shiftsTab==='sales'?'active':''}" onclick="switchShiftsTab('sales')">💰 מכירות</div>
       <div class="tab ${_shiftsTab==='workers'?'active':''}" onclick="switchShiftsTab('workers')">👷 עובדים</div>
       <div class="tab ${_shiftsTab==='report'?'active':''}" onclick="switchShiftsTab('report')">📊 דוח מלא</div>
+      <div class="tab ${_shiftsTab==='holidays'?'active':''}" onclick="switchShiftsTab('holidays')">🗓️ חגים</div>
     </div>`;
 
   if (_shiftsTab === 'saved') {
@@ -1722,6 +1660,22 @@ function renderShiftsApp() {
       </div>
       <div id="sales-table-wrap"><div class="info">טוען...</div></div>`;
     setTimeout(loadSales, 0);
+    return;
+  }
+
+  if (_shiftsTab === 'holidays') {
+    const curYear = new Date().getFullYear();
+    el.innerHTML = tabBar + `
+      <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem;flex-wrap:wrap">
+        <select id="hol-year" class="sb-input" style="width:auto" onchange="loadHolidaysTab()">
+          ${[curYear-1, curYear, curYear+1].map(y=>`<option value="${y}" ${y===curYear?'selected':''}>${y}</option>`).join('')}
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="loadHolidaysTab(true)">🔄 טען מחדש מהמקור</button>
+        <button class="btn btn-outline btn-sm" onclick="addHolidayRow()">➕ הוסף שורה</button>
+        <button class="btn btn-sm" onclick="saveHolidaysTab()">💾 שמור</button>
+      </div>
+      <div id="hol-content"><div class="info">טוען...</div></div>`;
+    setTimeout(loadHolidaysTab, 0);
     return;
   }
 
@@ -2097,6 +2051,62 @@ function handleSalesDrop(e) {
   document.getElementById('sales-upload-area').classList.remove('drag');
   const file = e.dataTransfer.files[0];
   if (file) uploadSalesFile(file);
+}
+
+// ── Holidays tab ─────────────────────────────────────────────────────────────
+let _holidays = [];
+
+async function loadHolidaysTab(refresh) {
+  const yearEl = document.getElementById('hol-year');
+  if (!yearEl) return;
+  const year = parseInt(yearEl.value);
+  const url = `/api/holidays/${year}` + (refresh ? '?refresh=true' : '');
+  const list = await api('GET', url);
+  _holidays = list ? JSON.parse(JSON.stringify(list)) : [];
+  if (refresh && S.holidays) S.holidays[year] = null;
+  renderHolidaysTab();
+}
+
+function renderHolidaysTab() {
+  const el = document.getElementById('hol-content');
+  if (!el) return;
+  const typeVal = { off: 0, half: 0.5 };
+  el.innerHTML = `
+    <table class="tbl" style="font-size:.85rem;max-width:640px">
+      <thead><tr>
+        <th>תאריך</th><th>שם החג</th><th>ימי עבודה</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${_holidays.map((h, i) => `<tr>
+          <td><input class="sb-input" style="width:110px" value="${esc(h.date)}"
+            oninput="_holidays[${i}].date=this.value"></td>
+          <td><input class="sb-input" style="width:100%;min-width:160px" value="${esc(h.name)}"
+            oninput="_holidays[${i}].name=this.value"></td>
+          <td>
+            <select class="sb-input" style="width:auto"
+              onchange="_holidays[${i}].type=this.value">
+              <option value="off"  ${h.type==='off' ?'selected':''}>0 — יום חופש</option>
+              <option value="half" ${h.type==='half'?'selected':''}>0.5 — חצי יום</option>
+            </select>
+          </td>
+          <td><button class="alias-del" onclick="_holidays.splice(${i},1);renderHolidaysTab()">✕</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function addHolidayRow() {
+  _holidays.push({ date: '', name: '', type: 'off' });
+  renderHolidaysTab();
+}
+
+async function saveHolidaysTab() {
+  const yearEl = document.getElementById('hol-year');
+  if (!yearEl) return;
+  const year = parseInt(yearEl.value);
+  await api('PUT', `/api/holidays/${year}`, _holidays);
+  if (S.holidays) S.holidays[year] = null;
+  toast('חגים נשמרו!');
 }
 
 function exportReport() {
