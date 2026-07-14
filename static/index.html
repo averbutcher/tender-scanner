@@ -310,6 +310,9 @@ const S = {
   shiftsToken: null,
   shiftsCfg: null,
   aliases: [],
+  reportMonth: null,
+  reportMonths: [],
+  holidays: {},  // year → [{date,name,type}]
   recruiterData: null,
   recruiterCfg: null,
   recruiterTab: 'single',
@@ -568,8 +571,71 @@ function renderSbSettings() {
         <label class="sb-label">שעת ברירת מחדל</label>
         <input class="sb-input" id="sb-defstart" maxlength="5" value="${(cfg.rules||{}).default_start_time||'10:00'}">
         <button class="sb-save" onclick="saveSbShiftsSettings()">💾 שמור הגדרות</button>
+        <hr class="divider">
+        <div class="sb-section" style="margin-top:0">ימי חג וחופש</div>
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:.6rem">ימים שאינם ימי עבודה מלאים — משמש לחישוב צפי</div>
+        <div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.5rem">
+          <select id="sb-holiday-year" class="sb-input" style="width:auto" onchange="loadSbHolidays()">
+            ${[new Date().getFullYear()-1, new Date().getFullYear(), new Date().getFullYear()+1].map(y=>`<option value="${y}">${y}</option>`).join('')}
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="refreshSbHolidays()">🔄</button>
+        </div>
+        <div id="sb-holidays-list" style="font-size:.78rem;max-height:280px;overflow-y:auto"></div>
+        <button class="btn btn-outline btn-sm" style="width:100%;margin-top:.4rem" onclick="addSbHoliday()">➕ הוסף יום</button>
+        <button class="sb-save" style="margin-top:.3rem" onclick="saveSbHolidays()">💾 שמור חגים</button>
       </div>`;
+  loadSbHolidays();
   }
+}
+
+let _sbHolidays = [];
+
+async function loadSbHolidays(refresh) {
+  const yearEl = document.getElementById('sb-holiday-year');
+  if (!yearEl) return;
+  const year = parseInt(yearEl.value);
+  const url = `/api/holidays/${year}` + (refresh ? '?refresh=true' : '');
+  const list = await api('GET', url);
+  _sbHolidays = list ? JSON.parse(JSON.stringify(list)) : [];
+  if (refresh && S.holidays) S.holidays[year] = null; // invalidate cache
+  renderSbHolidays();
+}
+
+async function refreshSbHolidays() {
+  await loadSbHolidays(true);
+}
+
+function renderSbHolidays() {
+  const el = document.getElementById('sb-holidays-list');
+  if (!el) return;
+  const typeLabel = { off: 'יום חופש', half: 'חצי יום' };
+  el.innerHTML = _sbHolidays.map((h, i) => `
+    <div style="display:grid;grid-template-columns:90px 1fr auto auto;gap:.3rem;align-items:center;margin-bottom:.3rem">
+      <input class="sb-input" style="padding:.2rem .4rem;font-size:.75rem" value="${esc(h.date)}"
+        oninput="_sbHolidays[${i}].date=this.value">
+      <input class="sb-input" style="padding:.2rem .4rem;font-size:.75rem" value="${esc(h.name)}"
+        oninput="_sbHolidays[${i}].name=this.value">
+      <select class="sb-input" style="padding:.2rem .3rem;font-size:.75rem;width:auto"
+        onchange="_sbHolidays[${i}].type=this.value">
+        <option value="off" ${h.type==='off'?'selected':''}>יום חופש</option>
+        <option value="half" ${h.type==='half'?'selected':''}>חצי יום</option>
+      </select>
+      <button class="alias-del" onclick="_sbHolidays.splice(${i},1);renderSbHolidays()">✕</button>
+    </div>`).join('');
+}
+
+function addSbHoliday() {
+  _sbHolidays.push({ date: '', name: '', type: 'off' });
+  renderSbHolidays();
+}
+
+async function saveSbHolidays() {
+  const yearEl = document.getElementById('sb-holiday-year');
+  if (!yearEl) return;
+  const year = parseInt(yearEl.value);
+  await api('PUT', `/api/holidays/${year}`, _sbHolidays);
+  if (S.holidays) S.holidays[year] = null; // invalidate cache
+  toast('חגים נשמרו!');
 }
 
 async function saveSbTenderSettings() {
@@ -1661,11 +1727,14 @@ function renderShiftsApp() {
 
   if (_shiftsTab === 'report') {
     el.innerHTML = tabBar + `
-      <div style="margin-bottom:.8rem">
+      <div style="display:flex;align-items:center;gap:.8rem;margin-bottom:1rem;flex-wrap:wrap">
+        <select id="report-month-select" class="sb-input" style="width:auto;min-width:140px" onchange="onReportMonthChange(this.value)">
+          <option value="">טוען חודשים...</option>
+        </select>
         <button class="btn btn-outline btn-sm" onclick="exportReport()">⬇️ ייצוא לאקסל</button>
       </div>
       <div id="report-content"><div class="info">טוען...</div></div>`;
-    setTimeout(loadFullReport, 0);
+    setTimeout(initReportTab, 0);
     return;
   }
 
@@ -2031,7 +2100,79 @@ function handleSalesDrop(e) {
 }
 
 function exportReport() {
-  window.location.href = '/api/report/export';
+  const m = S.reportMonth || '';
+  window.location.href = '/api/report/export' + (m ? `?month=${m}` : '');
+}
+
+// ── Hebrew month names ──────────────────────────────────────────────────────
+const HE_MONTHS = ['','ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+function fmtMonth(ym) {
+  if (!ym) return '';
+  const [y, m] = ym.split('-');
+  return `${HE_MONTHS[parseInt(m)] || m} ${y}`;
+}
+
+// Convert DD/MM/YYYY or YYYY-MM-DD to YYYY-MM
+function toYM(d) {
+  if (!d) return '';
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) return d.slice(6,10) + '-' + d.slice(3,5);
+  if (/^\d{4}-\d{2}/.test(d)) return d.slice(0,7);
+  return '';
+}
+
+// Convert DD/MM/YYYY to YYYY-MM-DD for comparison
+function toISO(d) {
+  if (!d) return '';
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) return `${d.slice(6,10)}-${d.slice(3,5)}-${d.slice(0,2)}`;
+  return d;
+}
+
+// Count work days in a month given holiday map {YYYY-MM-DD: 'off'|'half'}
+// Returns {total, done} where done = days up to and including untilISO
+function calcWorkDays(year, month, holidayMap, untilISO) {
+  const daysInMonth = new Date(year, month, 0).getDate(); // month is 1-based
+  let total = 0, done = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = new Date(year, month - 1, day);
+    const dow = d.getDay(); // 0=Sun,6=Sat
+    if (dow === 6) continue; // Saturday
+    const iso = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const ht = holidayMap[iso];
+    let val = (ht === 'off') ? 0 : (ht === 'half' || dow === 5) ? 0.5 : 1; // dow 5 = Friday
+    total += val;
+    if (untilISO && iso <= untilISO) done += val;
+  }
+  return { total, done };
+}
+
+async function getHolidays(year) {
+  if (S.holidays[year]) return S.holidays[year];
+  const list = await api('GET', `/api/holidays/${year}`);
+  S.holidays[year] = list || [];
+  return S.holidays[year];
+}
+
+async function initReportTab() {
+  // Load months list
+  const months = await api('GET', '/api/report/months');
+  S.reportMonths = months || [];
+  const sel = document.getElementById('report-month-select');
+  if (!sel) return;
+  if (!S.reportMonths.length) {
+    sel.innerHTML = '<option value="">אין נתונים</option>';
+  } else {
+    if (!S.reportMonth || !S.reportMonths.includes(S.reportMonth))
+      S.reportMonth = S.reportMonths[0];
+    sel.innerHTML = S.reportMonths.map(m =>
+      `<option value="${m}" ${m === S.reportMonth ? 'selected' : ''}>${fmtMonth(m)}</option>`
+    ).join('');
+  }
+  await loadFullReport();
+}
+
+async function onReportMonthChange(val) {
+  S.reportMonth = val;
+  await loadFullReport();
 }
 
 async function loadFullReport() {
@@ -2044,9 +2185,44 @@ async function loadFullReport() {
       api('GET', '/api/sales'),
     ]);
 
-    // Shift stats per worker: unique dates = shifts, sum hours
+    const month = S.reportMonth;
+
+    // Filter helpers
+    const inMonth = d => month ? toYM(d) === month : true;
+
+    // Latest ISO date in this month across both data sets (for "days done" cutoff)
+    let latestISO = '';
+    for (const s of (shifts || [])) {
+      if (inMonth(s.date)) { const iso = toISO(s.date); if (iso > latestISO) latestISO = iso; }
+    }
+    for (const s of (salesData || [])) {
+      if (inMonth(s.date)) { const iso = toISO(s.date); if (iso > latestISO) latestISO = iso; }
+    }
+
+    // Work day projection for the selected month
+    let projTotal = 0, projDone = 0;
+    if (month) {
+      const [yr, mo] = month.split('-').map(Number);
+      const holidays = await getHolidays(yr);
+      const hMap = {};
+      for (const h of holidays) hMap[h.date] = h.type;
+      const wd = calcWorkDays(yr, mo, hMap, latestISO);
+      projTotal = wd.total;
+      projDone  = wd.done;
+    }
+
+    const fmt = n => (n === null || n === undefined || n === '') ? '' : (n % 1 === 0 ? n : parseFloat(n.toFixed(2)));
+    const proj = (val, done, total) => (done && total) ? fmt(val / done * total) : '—';
+    const pctStr = (p, target) => {
+      if (p === '—' || !target) return '—';
+      const t = parseFloat(target);
+      return t ? fmt(parseFloat(p) / t * 100) + '%' : '—';
+    };
+
+    // Shift stats (filtered to month)
     const shiftStats = {};
     for (const s of (shifts || [])) {
+      if (!inMonth(s.date)) continue;
       const name = (s.worker_name || '').trim();
       if (!name) continue;
       if (!shiftStats[name]) shiftStats[name] = { dates: new Set(), hours: 0 };
@@ -2054,19 +2230,20 @@ async function loadFullReport() {
       shiftStats[name].hours += (parseFloat(s.hours) || 0);
     }
 
-    // Sales stats per worker (matched by first_name + " " + last_name = full_name)
+    // Sales stats (filtered to month)
     const salesStats = {};
     const initSale = () => ({ total: 0, rev1500: 0, rev2500: 0, rev4000: 0, standingOrder: 0, issued: 0 });
     for (const s of (salesData || [])) {
+      if (!inMonth(s.date)) continue;
       const name = ((s.first_name || '') + ' ' + (s.last_name || '')).trim();
       if (!name) continue;
       if (!salesStats[name]) salesStats[name] = initSale();
       const st = salesStats[name];
-      if (s.approved)         st.total++;
-      if (s.revolving_1500)   st.rev1500++;
-      if (s.revolving_2500)   st.rev2500++;
-      if (s.revolving_4000)   st.rev4000++;
-      if (s.standing_order)   st.standingOrder++;
+      if (s.approved)       st.total++;
+      if (s.revolving_1500) st.rev1500++;
+      if (s.revolving_2500) st.rev2500++;
+      if (s.revolving_4000) st.rev4000++;
+      if (s.standing_order) st.standingOrder++;
       if ((s.status_raw || '').trim() === 'הונפק') st.issued++;
     }
 
@@ -2087,72 +2264,70 @@ async function loadFullReport() {
       else noManager.push(w);
     }
 
-    const fmt = n => (n === null || n === undefined) ? '' : (n % 1 === 0 ? n : parseFloat(n.toFixed(2)));
-    const pct = (a, b) => b ? fmt(a / b) : '—';
     let rows = '';
 
     const workerRow = (w, isMgr) => {
       const ss = shiftStats[w.full_name] || { dates: new Set(), hours: 0 };
       const sa = salesStats[w.full_name] || initSale();
-      const totalShifts = ss.dates.size;
-      const totalHours  = ss.hours;
-      const avgPerHour  = totalHours ? fmt(sa.total / totalHours) : '—';
-      const bg = isMgr ? 'background:var(--surface);font-weight:600' : '';
+      const sh = ss.dates.size, hr = ss.hours;
+      const avg = hr ? fmt(sa.total / hr) : '—';
+      const pH  = proj(hr, projDone, projTotal);
+      const pS  = proj(sa.total, projDone, projTotal);
+      const bg  = isMgr ? 'background:var(--surface);font-weight:600' : '';
       return `<tr style="${bg}">
         <td>${esc(w.id_number||'')}</td>
         <td>${esc(w.full_name||'')}</td>
         <td>${esc(isMgr ? '' : (w.manager||''))}</td>
-        <td style="text-align:center">${totalShifts}</td>
-        <td style="text-align:center">${fmt(totalHours)}</td>
+        <td style="text-align:center">${sh}</td>
+        <td style="text-align:center">${fmt(hr)||0}</td>
         <td style="text-align:center">${sa.total}</td>
         <td style="text-align:center">${sa.rev1500}</td>
         <td style="text-align:center">${sa.rev2500}</td>
         <td style="text-align:center">${sa.rev4000}</td>
         <td style="text-align:center">${sa.standingOrder}</td>
         <td style="text-align:center"></td>
-        <td style="text-align:center">${avgPerHour}</td>
-        <td style="text-align:center">—</td>
+        <td style="text-align:center">${avg}</td>
+        <td style="text-align:center">${pH}</td>
         <td style="text-align:center">${esc(w.sales_target||'')}</td>
-        <td style="text-align:center">—</td>
-        <td style="text-align:center">—</td>
+        <td style="text-align:center">${pS}</td>
+        <td style="text-align:center">${pctStr(pS, w.sales_target)}</td>
         <td style="text-align:center">${sa.issued}</td>
       </tr>`;
     };
 
-    const sumWorkers = (nameList) => {
-      let shifts=0, hours=0, total=0, rev1500=0, rev2500=0, rev4000=0, so=0, issued=0;
-      for (const name of nameList) {
-        const ss = shiftStats[name] || { dates: new Set(), hours: 0 };
-        const sa = salesStats[name] || initSale();
-        shifts += ss.dates.size;
-        hours  += ss.hours;
-        total  += sa.total;
-        rev1500 += sa.rev1500;
-        rev2500 += sa.rev2500;
-        rev4000 += sa.rev4000;
-        so      += sa.standingOrder;
-        issued  += sa.issued;
+    const sumWorkers = nameList => {
+      let sh=0, hr=0, total=0, rev1500=0, rev2500=0, rev4000=0, so=0, issued=0;
+      for (const n of nameList) {
+        const ss = shiftStats[n] || { dates: new Set(), hours: 0 };
+        const sa = salesStats[n] || initSale();
+        sh += ss.dates.size; hr += ss.hours; total += sa.total;
+        rev1500 += sa.rev1500; rev2500 += sa.rev2500; rev4000 += sa.rev4000;
+        so += sa.standingOrder; issued += sa.issued;
       }
-      return { shifts, hours, total, rev1500, rev2500, rev4000, so, issued };
+      return { sh, hr, total, rev1500, rev2500, rev4000, so, issued };
     };
 
     const sumRow = (mgrName, workerList, mgrWorker) => {
-      const allNames = [...workerList.map(w=>w.full_name), mgrWorker ? mgrWorker.full_name : null].filter(Boolean);
-      const t = sumWorkers(allNames);
-      const avgPerHour = t.hours ? fmt(t.total / t.hours) : '—';
+      const names = [...workerList.map(w=>w.full_name), mgrWorker?.full_name].filter(Boolean);
+      const t = sumWorkers(names);
+      const avg = t.hr ? fmt(t.total / t.hr) : '—';
+      const pH  = proj(t.hr, projDone, projTotal);
+      const pS  = proj(t.total, projDone, projTotal);
       return `<tr style="background:var(--border);font-weight:700;font-size:.8rem">
-        <td colspan="2">סה״כ ${esc(mgrName)}</td>
-        <td></td>
-        <td style="text-align:center">${t.shifts}</td>
-        <td style="text-align:center">${fmt(t.hours)}</td>
+        <td colspan="2">סה״כ ${esc(mgrName)}</td><td></td>
+        <td style="text-align:center">${t.sh}</td>
+        <td style="text-align:center">${fmt(t.hr)||0}</td>
         <td style="text-align:center">${t.total}</td>
         <td style="text-align:center">${t.rev1500}</td>
         <td style="text-align:center">${t.rev2500}</td>
         <td style="text-align:center">${t.rev4000}</td>
         <td style="text-align:center">${t.so}</td>
         <td></td>
-        <td style="text-align:center">${avgPerHour}</td>
-        <td></td><td></td><td></td><td></td>
+        <td style="text-align:center">${avg}</td>
+        <td style="text-align:center">${pH}</td>
+        <td></td>
+        <td style="text-align:center">${pS}</td>
+        <td></td>
         <td style="text-align:center">${t.issued}</td>
       </tr>`;
     };
@@ -2166,8 +2341,15 @@ async function loadFullReport() {
 
     if (!rows) { el.innerHTML = '<div class="info">אין נתוני עובדים. הוסף עובדים בטאב 👷 עובדים.</div>'; return; }
 
-    const th = t => `<th style="white-space:nowrap;font-size:.75rem">${t}</th>`;
-    el.innerHTML = `
+    const projInfo = projTotal
+      ? `<div style="font-size:.78rem;color:var(--muted);margin-bottom:.6rem">
+           ימי עבודה בחודש: ${projTotal} | בוצעו עד כה: ${projDone}
+           ${latestISO ? `(נכון ל-${latestISO.split('-').reverse().join('/')})` : ''}
+         </div>`
+      : '';
+
+    const th = t => `<th style="white-space:nowrap;font-size:.75rem;padding:.4rem .5rem">${t}</th>`;
+    el.innerHTML = projInfo + `
       <div style="overflow-x:auto">
       <table class="tbl" style="font-size:.8rem">
         <thead><tr>

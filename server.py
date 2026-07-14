@@ -1481,12 +1481,24 @@ async def upload_sales(u: str = Depends(auth), file: UploadFile = File(...)):
                 return "" if v in ("nan", "None") else v
             return ""
 
+        def norm_date(raw: str) -> str:
+            """Normalize any date string to DD/MM/YYYY."""
+            raw = raw.strip()
+            if not raw or raw in ("nan", "None"):
+                return ""
+            try:
+                import pandas as _pd
+                dt = _pd.to_datetime(raw, dayfirst=True)
+                return dt.strftime("%d/%m/%Y")
+            except Exception:
+                return raw
+
         sales = []
         for _, row in df.iterrows():
             sale_num = cell(row, 0)   # A
             if not sale_num:
                 continue
-            date_val = cell(row, 1)   # B
+            date_val = norm_date(cell(row, 1))   # B
             branch   = cell(row, 2)   # C
             first_name = cell(row, 3) # D
             last_name  = cell(row, 4) # E
@@ -1520,17 +1532,70 @@ async def upload_sales(u: str = Depends(auth), file: UploadFile = File(...)):
 
 
 @app.get("/api/report/export")
-async def export_report(u: str = Depends(auth)):
+async def export_report(u: str = Depends(auth), month: str = Query(None)):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
+    from datetime import date as _date, timedelta
+    import calendar as _calendar
 
     workers    = _load_workers(u)
     shifts_all = _load_saved_shifts(u)
     sales_all  = _load_sales(u)
 
-    # Shift stats
+    # Determine month to report on
+    all_dates = (
+        [str(s.get("date","")) for s in shifts_all] +
+        [str(s.get("date","")) for s in sales_all]
+    )
+    all_yms = sorted({_date_to_ym(d) for d in all_dates if _date_to_ym(d)}, reverse=True)
+    report_month = month or (all_yms[0] if all_yms else "")
+
+    def in_month(d: str) -> bool:
+        return bool(report_month) and _date_to_ym(str(d)) == report_month
+
+    # Work day calculation
+    proj_total = proj_done = 0.0
+    if report_month:
+        try:
+            yr, mo = int(report_month[:4]), int(report_month[5:7])
+            holidays_list = _load_holidays_cached(yr) or _fetch_and_build_holidays(yr)
+            holiday_map = {h["date"]: h["type"] for h in holidays_list}
+
+            # Latest date in data for this month
+            month_dates = [_date_to_ym(str(d)) == report_month and d for d in all_dates]
+            def d_to_iso(d: str) -> str:
+                d = d.strip()
+                if len(d) >= 10 and d[2] == "/" and d[5] == "/":
+                    return f"{d[6:10]}-{d[3:5]}-{d[0:2]}"
+                return d
+            iso_dates = [d_to_iso(str(s.get("date",""))) for s in shifts_all + sales_all if in_month(str(s.get("date","")))]
+            until_iso = max(iso_dates) if iso_dates else ""
+
+            days_in = _calendar.monthrange(yr, mo)[1]
+            for day in range(1, days_in + 1):
+                d = _date(yr, mo, day)
+                dow = d.weekday()  # 0=Mon … 5=Sat … 6=Sun
+                if dow == 5:  # Saturday
+                    continue
+                d_iso = d.isoformat()
+                htype = holiday_map.get(d_iso)
+                if htype == "off":
+                    val = 0.0
+                elif htype == "half" or dow == 4:  # Friday = 4 in Python (Mon=0)
+                    val = 0.5
+                else:
+                    val = 1.0
+                proj_total += val
+                if until_iso and d_iso <= until_iso:
+                    proj_done += val
+        except Exception:
+            pass
+
+    # Shift stats (filtered to month)
     shift_stats: dict = {}
     for s in shifts_all:
+        if not in_month(str(s.get("date",""))):
+            continue
         name = (s.get("worker_name") or "").strip()
         if not name:
             continue
@@ -1540,18 +1605,20 @@ async def export_report(u: str = Depends(auth)):
             shift_stats[name]["dates"].add(s["date"])
         shift_stats[name]["hours"] += float(s.get("hours") or 0)
 
-    # Sales stats
+    # Sales stats (filtered to month)
     def init_sale():
         return {"total": 0, "rev1500": 0, "rev2500": 0, "rev4000": 0, "so": 0, "issued": 0}
     sale_stats: dict = {}
     for s in sales_all:
+        if not in_month(str(s.get("date",""))):
+            continue
         name = ((s.get("first_name") or "") + " " + (s.get("last_name") or "")).strip()
         if not name:
             continue
         if name not in sale_stats:
             sale_stats[name] = init_sale()
         st = sale_stats[name]
-        if s.get("approved"):      st["total"]  += 1
+        if s.get("approved"):       st["total"]  += 1
         if s.get("revolving_1500"): st["rev1500"] += 1
         if s.get("revolving_2500"): st["rev2500"] += 1
         if s.get("revolving_4000"): st["rev4000"] += 1
@@ -1593,41 +1660,49 @@ async def export_report(u: str = Depends(auth)):
     ws.title = "דוח מלא"
     ws.sheet_view.rightToLeft = True
 
-    hdr_fill   = PatternFill("solid", fgColor="2F5496")
-    mgr_fill   = PatternFill("solid", fgColor="D6DCE4")
-    sum_fill   = PatternFill("solid", fgColor="BDD7EE")
-    hdr_font   = Font(bold=True, color="FFFFFF", size=10)
-    bold_font  = Font(bold=True, size=10)
-    norm_font  = Font(size=10)
-    center     = Alignment(horizontal="center")
+    hdr_fill  = PatternFill("solid", fgColor="2F5496")
+    mgr_fill  = PatternFill("solid", fgColor="D6DCE4")
+    sum_fill  = PatternFill("solid", fgColor="BDD7EE")
+    hdr_font  = Font(bold=True, color="FFFFFF", size=10)
+    bold_font = Font(bold=True, size=10)
+    norm_font = Font(size=10)
+    center    = Alignment(horizontal="center")
 
     ws.append(HEADERS)
     for cell in ws[1]:
-        cell.font      = hdr_font
-        cell.fill      = hdr_fill
-        cell.alignment = center
+        cell.font = hdr_font; cell.fill = hdr_fill; cell.alignment = center
 
     def fmt(n):
-        if n is None: return ""
-        return round(n, 2) if n % 1 else int(n)
+        if n is None or n == "": return ""
+        try:
+            f = float(n)
+            return round(f, 2) if f % 1 else int(f)
+        except Exception:
+            return n
+
+    def proj_val(current, done, total):
+        if done and total:
+            return fmt(current / done * total)
+        return ""
 
     def worker_data(w, is_mgr):
-        name = w.get("full_name", "")
-        ss   = shift_stats.get(name, {"dates": set(), "hours": 0.0})
-        sa   = sale_stats.get(name, init_sale())
+        name     = w.get("full_name", "")
+        ss       = shift_stats.get(name, {"dates": set(), "hours": 0.0})
+        sa       = sale_stats.get(name, init_sale())
         shifts_n = len(ss["dates"])
         hours_n  = ss["hours"]
-        avg = fmt(sa["total"] / hours_n) if hours_n else ""
+        avg      = fmt(sa["total"] / hours_n) if hours_n else ""
+        p_hours  = proj_val(hours_n, proj_done, proj_total)
+        p_sales  = proj_val(sa["total"], proj_done, proj_total)
+        target   = w.get("sales_target", "")
+        pct      = fmt(float(p_sales) / float(target) * 100) if p_sales and target else ""
         return [
-            w.get("id_number", ""),
-            name,
+            w.get("id_number", ""), name,
             "" if is_mgr else (w.get("manager") or ""),
-            shifts_n,
-            fmt(hours_n),
+            shifts_n, fmt(hours_n),
             sa["total"], sa["rev1500"], sa["rev2500"], sa["rev4000"],
-            sa["so"], "",
-            avg,
-            "", w.get("sales_target", ""), "", "", sa["issued"],
+            sa["so"], "", avg,
+            p_hours, target, p_sales, pct, sa["issued"],
         ]
 
     def sum_data(mgr_name, name_list):
@@ -1643,41 +1718,37 @@ async def export_report(u: str = Depends(auth)):
             rev4000  += sa["rev4000"]
             so       += sa["so"]
             issued   += sa["issued"]
-        avg = fmt(total / hours_n) if hours_n else ""
+        avg     = fmt(total / hours_n) if hours_n else ""
+        p_hours = proj_val(hours_n, proj_done, proj_total)
+        p_sales = proj_val(total, proj_done, proj_total)
         return [
             f"סה\"כ {mgr_name}", f"סה\"כ {mgr_name}", "",
             shifts_n, fmt(hours_n),
             total, rev1500, rev2500, rev4000,
             so, "", avg,
-            "", "", "", "", issued,
+            p_hours, "", p_sales, "", issued,
         ]
 
-    def append_worker(row_data, is_mgr=False, is_sum=False):
+    def append_row(row_data, is_mgr=False, is_sum=False):
         ws.append(row_data)
         row = ws.max_row
         for cell in ws[row]:
             cell.font = bold_font if (is_mgr or is_sum) else norm_font
-            if is_sum:
-                cell.fill = sum_fill
-            elif is_mgr:
-                cell.fill = mgr_fill
-            if cell.column > 3:
-                cell.alignment = center
+            if is_sum:   cell.fill = sum_fill
+            elif is_mgr: cell.fill = mgr_fill
+            if cell.column > 3: cell.alignment = center
 
     for mgr_name, group in manager_map.items():
-        for w in group["workers"]:
-            append_worker(worker_data(w, False))
-        if group["mgr"]:
-            append_worker(worker_data(group["mgr"], True), is_mgr=True)
+        for w in group["workers"]: append_row(worker_data(w, False))
+        if group["mgr"]:           append_row(worker_data(group["mgr"], True), is_mgr=True)
         all_names = [w.get("full_name","") for w in group["workers"]]
-        if group["mgr"]:
-            all_names.append(group["mgr"].get("full_name",""))
-        append_worker(sum_data(mgr_name, all_names), is_sum=True)
+        if group["mgr"]: all_names.append(group["mgr"].get("full_name",""))
+        append_row(sum_data(mgr_name, all_names), is_sum=True)
 
     for w in no_manager:
-        append_worker(worker_data(w, False))
+        append_row(worker_data(w, False))
 
-    for i, col in enumerate(ws.columns, 1):
+    for col in ws.columns:
         max_len = max((len(str(c.value or "")) for c in col), default=8)
         ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 28)
 
@@ -1686,12 +1757,126 @@ async def export_report(u: str = Depends(auth)):
     data = out.read_bytes()
     out.unlink(missing_ok=True)
 
+    fname = f"worker_report_{report_month or 'all'}.xlsx"
     from fastapi.responses import Response
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="worker_report.xlsx"'},
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+# ── Holidays ──────────────────────────────────────────────────────────────────
+
+def _holidays_path(year: int) -> Path:
+    return BASE_DIR / "data" / "shared" / f"holidays_{year}.json"
+
+def _load_holidays_cached(year: int):
+    p = _holidays_path(year)
+    return _rj(p, None) if p.exists() else None
+
+def _save_holidays_cached(year: int, holidays: list):
+    p = _holidays_path(year)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(holidays, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def _fetch_and_build_holidays(year: int) -> list:
+    import urllib.request
+    from datetime import date as _date, timedelta
+    url = (f"https://www.hebcal.com/hebcal?v=1&cfg=json&year={year}"
+           f"&maj=on&min=on&mod=on&nx=off&ss=off&mf=off&c=off&geo=none&M=on&s=on&i=on")
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            items = json.loads(resp.read()).get("items", [])
+    except Exception:
+        items = []
+
+    yomtov_dates: set = set()
+    national_off: set = set()
+    national_half: set = set()
+    items_by_date: dict = {}
+    for item in items:
+        d = (item.get("date") or "")[:10]
+        if not d:
+            continue
+        items_by_date.setdefault(d, []).append(item)
+        title = item.get("title", "")
+        if item.get("yomtov"):
+            yomtov_dates.add(d)
+        if any(k in title for k in ["Yom HaAtzma'ut", "Yom HaAtzmaut", "Yom ha-Atzma'ut"]):
+            national_off.add(d)
+        if "Yom HaZikaron" in title:
+            national_half.add(d)
+
+    holiday_map: dict = {}
+
+    for d in yomtov_dates:
+        item = next((i for i in items_by_date.get(d, []) if i.get("yomtov")), None)
+        name = (item or {}).get("hebrew") or (item or {}).get("title") or "חג"
+        holiday_map[d] = {"name": name, "type": "off"}
+
+    # Eve of each Yom Tov = half day
+    for d in sorted(yomtov_dates):
+        eve = (_date.fromisoformat(d) - timedelta(days=1)).isoformat()
+        if eve in holiday_map:
+            continue
+        if _date.fromisoformat(eve).weekday() == 5:  # Saturday
+            continue
+        yomtov_name = holiday_map.get(d, {}).get("name", "חג")
+        holiday_map[eve] = {"name": f"ערב {yomtov_name}", "type": "half"}
+
+    for d in national_off:
+        item = next(iter(items_by_date.get(d, [])), None)
+        name = (item or {}).get("hebrew") or "יום העצמאות"
+        holiday_map[d] = {"name": name, "type": "off"}
+
+    for d in national_half:
+        item = next(iter(items_by_date.get(d, [])), None)
+        name = (item or {}).get("hebrew") or "יום הזיכרון"
+        holiday_map.setdefault(d, {"name": name, "type": "half"})
+
+    return sorted(
+        [{"date": d, **v} for d, v in holiday_map.items()],
+        key=lambda x: x["date"],
+    )
+
+@app.get("/api/holidays/{year}")
+async def get_holidays(year: int, refresh: bool = False, _: str = Depends(auth)):
+    cached = _load_holidays_cached(year)
+    if cached is None or refresh:
+        cached = _fetch_and_build_holidays(year)
+        _save_holidays_cached(year, cached)
+    return cached
+
+@app.put("/api/holidays/{year}")
+async def update_holidays(year: int, request: Request, _: str = Depends(auth)):
+    body = await request.json()
+    _save_holidays_cached(year, body)
+    return {"ok": True}
+
+# ── Report months ──────────────────────────────────────────────────────────────
+
+def _date_to_ym(d: str) -> str:
+    """DD/MM/YYYY or YYYY-MM-DD → YYYY-MM, empty string if unparseable."""
+    d = (d or "").strip()
+    if len(d) >= 10 and d[2] == "/" and d[5] == "/":
+        return f"{d[6:10]}-{d[3:5]}"
+    if len(d) >= 7 and d[4] == "-":
+        return d[:7]
+    return ""
+
+@app.get("/api/report/months")
+async def get_report_months(u: str = Depends(auth)):
+    months: set = set()
+    for s in _load_saved_shifts(u):
+        ym = _date_to_ym(str(s.get("date", "")))
+        if ym:
+            months.add(ym)
+    for s in _load_sales(u):
+        ym = _date_to_ym(str(s.get("date", "")))
+        if ym:
+            months.add(ym)
+    return sorted(months, reverse=True)
 
 
 # ── Recruiter Analysis ────────────────────────────────────────────────────────
