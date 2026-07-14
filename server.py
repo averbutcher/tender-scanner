@@ -1209,7 +1209,8 @@ async def shifts_compare(
 
         def _f(v):
             if hasattr(v, "strftime"):
-                return v.strftime("%H:%M") if hasattr(v, "hour") else v.strftime("%d/%m/%Y")
+                # time objects have .hour but not .year; date/datetime/Timestamp have both
+                return v.strftime("%H:%M") if (hasattr(v, "hour") and not hasattr(v, "year")) else v.strftime("%d/%m/%Y")
             return str(v) if v else ""
 
         return {
