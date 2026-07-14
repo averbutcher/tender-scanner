@@ -1522,7 +1522,7 @@ async def upload_sales(u: str = Depends(auth), file: UploadFile = File(...)):
                 return ""
             try:
                 import pandas as _pd
-                dt = _pd.to_datetime(raw, dayfirst=True)
+                dt = _pd.to_datetime(raw, dayfirst=False)
                 return dt.strftime("%d/%m/%Y")
             except Exception:
                 return raw
