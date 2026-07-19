@@ -1506,8 +1506,12 @@ async def upload_sales(u: str = Depends(auth), file: UploadFile = File(...)):
         if sheet_name is None:
             raise HTTPException(status_code=400, detail=f"גיליון '{target_sheet}' לא נמצא בקובץ")
 
+        # Read all columns as text for easy cell access
         df = pd.read_excel(str(tmp_path), sheet_name=sheet_name, header=0, dtype=str)
         df = df.fillna("")
+        # Read date column (B = index 1) separately as native datetime so Excel serial is parsed correctly
+        df_dates = pd.read_excel(str(tmp_path), sheet_name=sheet_name, header=0, usecols=[1], parse_dates=[0])
+        date_col = df_dates.iloc[:, 0]
 
         def cell(row, col_idx):
             if col_idx < len(row):
@@ -1515,24 +1519,18 @@ async def upload_sales(u: str = Depends(auth), file: UploadFile = File(...)):
                 return "" if v in ("nan", "None") else v
             return ""
 
-        def norm_date(raw: str) -> str:
-            """Normalize any date string to DD/MM/YYYY."""
-            raw = raw.strip()
-            if not raw or raw in ("nan", "None"):
-                return ""
+        def fmt_date(val) -> str:
             try:
-                import pandas as _pd
-                dt = _pd.to_datetime(raw, dayfirst=True)
-                return dt.strftime("%d/%m/%Y")
+                return pd.Timestamp(val).strftime("%d/%m/%Y")
             except Exception:
-                return raw
+                return ""
 
         sales = []
-        for _, row in df.iterrows():
+        for i, (_, row) in enumerate(df.iterrows()):
             sale_num = cell(row, 0)   # A
             if not sale_num:
                 continue
-            date_val = norm_date(cell(row, 1))   # B
+            date_val = fmt_date(date_col.iloc[i]) if i < len(date_col) else ""   # B
             branch   = cell(row, 2)   # C
             first_name = cell(row, 3) # D
             last_name  = cell(row, 4) # E
